@@ -16,7 +16,7 @@ async function bootstrap() {
   }
 
 const app = createApp();
-app.listen(3000, '0.0.0.0', () => {
+app.listen(port, '0.0.0.0', () => {
   console.log(`✅ API запущено на порту ${port}`);
   console.log(`✅ Healthcheck доступен: http://localhost:${port}/health`);
  });
