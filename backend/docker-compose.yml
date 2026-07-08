@@ -1,0 +1,41 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: scheduler_dev
+    ports:
+      - '5432:5432'
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/scheduler_dev
+      DATABASE_SSL: 'false'
+      JWT_SECRET: ${JWT_SECRET:-dev-only-secret-change-me}
+      JWT_EXPIRES_IN: 12h
+      PORT: 3000
+      NODE_ENV: production
+    ports:
+      - '3000:3000'
+    # Перед первым запуском (или после новых миграций) выполните внутри контейнера:
+    #   docker compose exec app node dist/db/migrate.js
+    #   docker compose exec app node dist/db/seed.js   (опционально — демо-данные)
+
+volumes:
+  pg_data:
