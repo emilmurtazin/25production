@@ -2,8 +2,13 @@ const express = require('express');
 const app = express();
 const port = 3000;
 
-// Отвечаем на ВСЕ запросы
-app.use((req, res) => {
+// Явный ответ на /health
+app.get('/health', (req, res) => {
+  res.status(200).send('OK');
+});
+
+// Явный ответ на корневой путь
+app.get('/', (req, res) => {
   res.status(200).send('OK');
 });
 
