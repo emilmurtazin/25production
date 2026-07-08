@@ -2,6 +2,7 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 COPY package*.json ./
+COPY tsconfig.json ./   # 👈 ДОБАВИЛИ
 RUN npm ci
 COPY . .
 RUN npm run build
@@ -21,15 +22,12 @@ COPY --from=build /app/drizzle.config.ts ./drizzle.config.ts
 COPY --from=build /app/src/db/schema.ts ./src/db/schema.ts
 COPY --from=build /app/src/db/seed.ts ./src/db/seed.ts
 
-# ✅ КОПИРУЕМ СЕРТИФИКАТ ИЗ ПАПКИ BACKEND
+# Копируем сертификат
 COPY root.crt /root/.cloud-certs/root.crt
-
-# Указываем приложению, где лежит сертификат
 ENV PGSSLROOTCERT=/root/.cloud-certs/ca.crt
 
 EXPOSE 3000
 
-# Healthcheck
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
