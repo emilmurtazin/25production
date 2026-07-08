@@ -20,11 +20,10 @@ COPY --from=build /app/drizzle ./drizzle
 COPY --from=build /app/drizzle.config.ts ./drizzle.config.ts
 COPY --from=build /app/src/db/schema.ts ./src/db/schema.ts
 
-# ✅ ПРАВИЛЬНЫЙ БЛОК С СЕРТИФИКАТОМ
-RUN mkdir -p /root/.cloud-certs && \
-    curl -o /root/.cloud-certs/ca.crt "https://st.timeweb.com/cloud-static/ca.crt" && \
-    chmod 0660 /root/.cloud-certs/ca.crt
+# ✅ КОПИРУЕМ СЕРТИФИКАТ ИЗ ПАПКИ BACKEND
+COPY ca.crt /root/.cloud-certs/ca.crt
 
+# Указываем приложению, где лежит сертификат
 ENV PGSSLROOTCERT=/root/.cloud-certs/ca.crt
 
 EXPOSE 3000
