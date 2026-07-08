@@ -15,11 +15,10 @@ async function bootstrap() {
     console.log('Миграции применены.');
   }
 
-const app = createApp();
-app.listen(port, '0.0.0.0', () => {
-  console.log(`✅ API запущено на порту ${port}`);
-  console.log(`✅ Healthcheck доступен: http://localhost:${port}/health`);
- });
+  const app = createApp();
+  app.listen(port, () => {
+    console.log(`API запущено на порту ${port}`);
+  });
 }
 
 bootstrap().catch((err) => {
