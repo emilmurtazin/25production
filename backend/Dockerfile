@@ -19,6 +19,7 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/drizzle ./drizzle
 COPY --from=build /app/drizzle.config.ts ./drizzle.config.ts
 COPY --from=build /app/src/db/schema.ts ./src/db/schema.ts
+COPY --from=build /app/src/db/seed.ts ./src/db/seed.ts
 
 # ✅ КОПИРУЕМ СЕРТИФИКАТ ИЗ ПАПКИ BACKEND
 COPY root.crt /root/.cloud-certs/root.crt
