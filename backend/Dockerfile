@@ -21,7 +21,7 @@ COPY --from=build /app/drizzle.config.ts ./drizzle.config.ts
 COPY --from=build /app/src/db/schema.ts ./src/db/schema.ts
 
 # ✅ КОПИРУЕМ СЕРТИФИКАТ ИЗ ПАПКИ BACKEND
-COPY ca.crt /root/.cloud-certs/ca.crt
+COPY root.crt /root/.cloud-certs/root.crt
 
 # Указываем приложению, где лежит сертификат
 ENV PGSSLROOTCERT=/root/.cloud-certs/ca.crt
