@@ -17,4 +17,6 @@ COPY --from=build /app/drizzle.config.ts ./drizzle.config.ts
 COPY --from=build /app/src/db/schema.ts ./src/db/schema.ts
 
 EXPOSE 3000
+HEALTHCHECK --interval=10s --timeout=5s --start-period=15s --retries=5 \
+  CMD wget -qO- http://localhost:3000/health || exit 1
 CMD ["node", "dist/index.js"]
