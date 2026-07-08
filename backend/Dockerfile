@@ -2,24 +2,28 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+RUN npm ci  # Устанавливаем ВСЕ зависимости (включая dev)
 COPY . .
 RUN npm run build
 
 FROM node:20-alpine AS production
 WORKDIR /app
 ENV NODE_ENV=production
+
+# Копируем package.json и устанавливаем ВСЕ зависимости
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm ci  # 👈 Устанавливаем ВСЕ зависимости (включая drizzle-kit)
+
+# Копируем всё из сборки
 COPY --from=build /app/dist ./dist
-# Копируем всё, что нужно для работы
 COPY --from=build /app/drizzle ./drizzle
-COPY --from=build /app/drizzle.config.ts ./drizzle.config.ts 2>/dev/null || true
+COPY --from=build /app/drizzle.config.ts ./drizzle.config.ts
 COPY --from=build /app/src/db/schema.ts ./src/db/schema.ts
 
-# Если у вас есть миграции, они должны быть в папке drizzle
-# Убедитесь, что папка существует (даже если пустая)
-RUN mkdir -p ./drizzle
-
 EXPOSE 3000
+
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD node -e "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
 CMD ["node", "dist/index.js"]
