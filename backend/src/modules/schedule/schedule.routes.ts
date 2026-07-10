@@ -8,13 +8,15 @@ export const scheduleRouter = Router();
 scheduleRouter.use(requireAuth);
 
 scheduleRouter.get('/', asyncHandler(async (_req, res) => {
-  const [shopRows, resourceRows, orderRows] = await Promise.all([
+  const [shopRows, resourceRows, orderRows, catalogRows] = await Promise.all([
     db.query.shops.findMany(),
     db.query.resources.findMany(),
     db.query.orders.findMany({ with: { operations: true, project: true } }),
+    db.query.catalogOperations.findMany(),
   ]);
 
   const shopById = new Map(shopRows.map((s) => [s.id, s]));
+  const catalogById = new Map(catalogRows.map((c) => [c.id, c]));
 
   const resourcesById = new Map<string, ResourceInput>();
   resourceRows.forEach((r) => {
@@ -34,6 +36,7 @@ scheduleRouter.get('/', asyncHandler(async (_req, res) => {
   const operations: OrderOperationInput[] = [];
   orderRows.forEach((order) => {
     order.operations.forEach((op) => {
+      const catalogOp = op.catalogOperationId ? catalogById.get(op.catalogOperationId) : undefined;
       operations.push({
         id: op.id,
         orderId: order.id,
@@ -46,6 +49,9 @@ scheduleRouter.get('/', asyncHandler(async (_req, res) => {
         orderCreatedAt: order.createdAt.getTime(),
         name: op.name,
         durationHours: op.durationHours,
+        completedHours: op.completedHours,
+        catalogOperationId: op.catalogOperationId,
+        requiredGrade: catalogOp?.requiredGrade ?? 1,
         sequence: op.sequence,
         resourceId: op.resourceId,
         pinnedStart: op.pinnedStart,

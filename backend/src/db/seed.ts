@@ -2,13 +2,14 @@ import 'dotenv/config';
 import { db, pool } from './client';
 import {
   shops, resources, catalogOperations, modifications, modificationItems, projects, orders, orderOperations, users,
-  measurements,
+  measurements, workers,
 } from './schema';
 import { hashPassword } from '../utils/password';
 
 async function main() {
   console.log('Очищаю таблицы...');
   await db.delete(measurements);
+  await db.delete(workers);
   await db.delete(orderOperations);
   await db.delete(orders);
   await db.delete(modificationItems);
@@ -41,31 +42,42 @@ async function main() {
   const insertedResources = await db.insert(resources).values(resourceDefs).returning();
   const r = (name: string) => insertedResources.find((x) => x.name === name)!;
 
+  console.log('Создаю работников участков...');
+  await db.insert(workers).values([
+    { name: 'Иванов И.И.', grade: 4, resourceId: r('Механосборка').id },
+    { name: 'Петров П.П.', grade: 2, resourceId: r('Механосборка').id },
+    { name: 'Сидоров С.С.', grade: 1, resourceId: r('Механосборка').id },
+    { name: 'Кузнецов К.К.', grade: 5, resourceId: r('Электромонтаж').id },
+    { name: 'Смирнов С.А.', grade: 3, resourceId: r('Электромонтаж').id },
+    { name: 'Волков В.В.', grade: 2, resourceId: r('Электромонтаж').id },
+    { name: 'Фёдоров Ф.Ф.', grade: 3, resourceId: r('Финальный контроль').id },
+  ]);
+
   console.log('Наполняю справочник операций...');
   const catalogDefs = [
-    { node: 'Сборка стойки турникета', name: 'Установка перемычки + латунных стоек + зенковка', normMinutes: 18, resourceId: r('Механосборка').id },
-    { node: 'Сборка стойки турникета', name: 'Установка проводов заземления + кабель-канала + кронштейна', normMinutes: 30, resourceId: r('Механосборка').id },
-    { node: 'Сборка стойки турникета', name: 'Установка кронштейнов + двигателей + магнита кожуха', normMinutes: 30, resourceId: r('Механосборка').id },
-    { node: 'Сборка стойки турникета', name: 'Установка автомата с розеткой + проводка 220В', normMinutes: 21, resourceId: r('Электромонтаж').id },
-    { node: 'Сборка стойки турникета', name: 'Установка центрального стекла', normMinutes: 15, resourceId: r('Механосборка').id },
-    { node: 'Сборка стойки турникета', name: 'Склейка подшипников (2 шт.)', normMinutes: 15, resourceId: r('Механосборка').id },
-    { node: 'Сборка стойки турникета', name: 'Установка валов + подшипников', normMinutes: 30, resourceId: r('Механосборка').id },
-    { node: 'Слесарные работы', name: 'Отрезать и зачистить детали корпуса', normMinutes: 30, resourceId: r('Механосборка').id },
-    { node: 'Сборка драйверов ДВ', name: 'Сборка корпуса драйверов + прикручивание', normMinutes: 15, resourceId: r('Электромонтаж').id },
-    { node: 'Сборка контроллера CTL и ПК', name: 'Сборка контроллера CTL и ПК + магнит', normMinutes: 18, resourceId: r('Электромонтаж').id },
-    { node: 'Сборка контроллера CTL и ПК', name: 'Установка PC + M2030CTL + обвязка коробки', normMinutes: 45, resourceId: r('Электромонтаж').id },
-    { node: 'Сборка трубы с камерой', name: 'Вклеивание трубы (рассеиватели + вставки)', normMinutes: 30, resourceId: r('Механосборка').id },
-    { node: 'Сборка трубы с камерой', name: 'Сборка модуля камеры', normMinutes: 15, resourceId: r('Электромонтаж').id },
-    { node: 'Сборка силового блока', name: 'Подготовка БП (пайка проводов, 4 шт.)', normMinutes: 21, resourceId: r('Электромонтаж').id },
-    { node: 'Сборка силового блока', name: 'Установка БП на кронштейны', normMinutes: 18, resourceId: r('Электромонтаж').id },
-    { node: 'Сборка кожухов', name: 'Склейка боковых кожухов (4 шт.)', normMinutes: 72, resourceId: r('Механосборка').id },
-    { node: 'Сборка кожухов', name: 'Сборка боковых кожухов (4 шт.)', normMinutes: 30, resourceId: r('Механосборка').id },
-    { node: 'Завершающие работы', name: 'Обвязка турникета проводами', normMinutes: 150, resourceId: r('Финальный контроль').id },
-    { node: 'Завершающие работы', name: 'Установка и настройка кожухов', normMinutes: 90, resourceId: r('Финальный контроль').id },
-    { node: 'Провода питания', name: 'Разводка проводов питания (комплект)', normMinutes: 31, resourceId: r('Электромонтаж').id },
-    { node: 'Патч-корды', name: 'Изготовление комплекта патч-кордов', normMinutes: 16, resourceId: r('Электромонтаж').id },
-    { node: 'Сборка модуля КЗП', name: 'Сборка шайбы КЗП', normMinutes: 48, resourceId: r('Электромонтаж').id },
-    { node: 'Сборка модуля КЗП', name: 'Установка дисплея + сканера ШК', normMinutes: 27, resourceId: r('Электромонтаж').id },
+    { node: 'Сборка стойки турникета', name: 'Установка перемычки + латунных стоек + зенковка', normMinutes: 18, requiredGrade: 2, resourceId: r('Механосборка').id },
+    { node: 'Сборка стойки турникета', name: 'Установка проводов заземления + кабель-канала + кронштейна', normMinutes: 30, requiredGrade: 2, resourceId: r('Механосборка').id },
+    { node: 'Сборка стойки турникета', name: 'Установка кронштейнов + двигателей + магнита кожуха', normMinutes: 30, requiredGrade: 3, resourceId: r('Механосборка').id },
+    { node: 'Сборка стойки турникета', name: 'Установка автомата с розеткой + проводка 220В', normMinutes: 21, requiredGrade: 4, resourceId: r('Электромонтаж').id },
+    { node: 'Сборка стойки турникета', name: 'Установка центрального стекла', normMinutes: 15, requiredGrade: 1, resourceId: r('Механосборка').id },
+    { node: 'Сборка стойки турникета', name: 'Склейка подшипников (2 шт.)', normMinutes: 15, requiredGrade: 1, resourceId: r('Механосборка').id },
+    { node: 'Сборка стойки турникета', name: 'Установка валов + подшипников', normMinutes: 30, requiredGrade: 3, resourceId: r('Механосборка').id },
+    { node: 'Слесарные работы', name: 'Отрезать и зачистить детали корпуса', normMinutes: 30, requiredGrade: 2, resourceId: r('Механосборка').id },
+    { node: 'Сборка драйверов ДВ', name: 'Сборка корпуса драйверов + прикручивание', normMinutes: 15, requiredGrade: 2, resourceId: r('Электромонтаж').id },
+    { node: 'Сборка контроллера CTL и ПК', name: 'Сборка контроллера CTL и ПК + магнит', normMinutes: 18, requiredGrade: 3, resourceId: r('Электромонтаж').id },
+    { node: 'Сборка контроллера CTL и ПК', name: 'Установка PC + M2030CTL + обвязка коробки', normMinutes: 45, requiredGrade: 4, resourceId: r('Электромонтаж').id },
+    { node: 'Сборка трубы с камерой', name: 'Вклеивание трубы (рассеиватели + вставки)', normMinutes: 30, requiredGrade: 1, resourceId: r('Механосборка').id },
+    { node: 'Сборка трубы с камерой', name: 'Сборка модуля камеры', normMinutes: 15, requiredGrade: 3, resourceId: r('Электромонтаж').id },
+    { node: 'Сборка силового блока', name: 'Подготовка БП (пайка проводов, 4 шт.)', normMinutes: 21, requiredGrade: 4, resourceId: r('Электромонтаж').id },
+    { node: 'Сборка силового блока', name: 'Установка БП на кронштейны', normMinutes: 18, requiredGrade: 2, resourceId: r('Электромонтаж').id },
+    { node: 'Сборка кожухов', name: 'Склейка боковых кожухов (4 шт.)', normMinutes: 72, requiredGrade: 1, resourceId: r('Механосборка').id },
+    { node: 'Сборка кожухов', name: 'Сборка боковых кожухов (4 шт.)', normMinutes: 30, requiredGrade: 1, resourceId: r('Механосборка').id },
+    { node: 'Завершающие работы', name: 'Обвязка турникета проводами', normMinutes: 150, requiredGrade: 3, resourceId: r('Финальный контроль').id },
+    { node: 'Завершающие работы', name: 'Установка и настройка кожухов', normMinutes: 90, requiredGrade: 3, resourceId: r('Финальный контроль').id },
+    { node: 'Провода питания', name: 'Разводка проводов питания (комплект)', normMinutes: 31, requiredGrade: 2, resourceId: r('Электромонтаж').id },
+    { node: 'Патч-корды', name: 'Изготовление комплекта патч-кордов', normMinutes: 16, requiredGrade: 1, resourceId: r('Электромонтаж').id },
+    { node: 'Сборка модуля КЗП', name: 'Сборка шайбы КЗП', normMinutes: 48, requiredGrade: 3, resourceId: r('Электромонтаж').id },
+    { node: 'Сборка модуля КЗП', name: 'Установка дисплея + сканера ШК', normMinutes: 27, requiredGrade: 4, resourceId: r('Электромонтаж').id },
   ];
   const insertedCatalog = await db.insert(catalogOperations).values(catalogDefs).returning();
   const c = (name: string) => insertedCatalog.find((x) => x.name === name)!;

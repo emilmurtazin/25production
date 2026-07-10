@@ -20,6 +20,7 @@ const createSchema = z.object({
   node: z.string().min(1),
   name: z.string().min(1),
   normMinutes: z.number().positive(),
+  requiredGrade: z.number().int().min(1).max(8).default(1),
   resourceId: z.string().uuid(),
 });
 

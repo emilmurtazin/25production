@@ -111,9 +111,49 @@ DELETE /api/orders/:id                     [ADMIN,DISPATCHER]
 PATCH  /api/orders/operations/:opId/pin    [ADMIN,DISPATCHER,SHOP_MASTER*]  { pinnedStart, pinnedResourceId? }
 DELETE /api/orders/operations/:opId/pin    [ADMIN,DISPATCHER,SHOP_MASTER*]  снять закрепление
 
-GET    /api/schedule                                 вычисленный график: resources, shops, operations (со start/end/segments)
+GET    /api/schedule                                 вычисленный график: resources, shops, operations (со start/end/segments, remainingHours)
+
+GET    /api/workers?resourceId=...
+POST   /api/workers                        [ADMIN,SHOP_MASTER*]  { name, grade, resourceId }
+PATCH  /api/workers/:id                    [ADMIN,SHOP_MASTER*]  { name?, grade?, active? }
+DELETE /api/workers/:id                    [ADMIN,SHOP_MASTER*]
+
+POST   /api/work-orders/generate           [ADMIN,DISPATCHER,SHOP_MASTER*]  { dayOffset, resourceId? } — сформировать/пересчитать наряды на день
+GET    /api/work-orders?dayOffset=&workerId=&resourceId=
+POST   /api/work-orders/items/:id/report   [ADMIN,SHOP_MASTER*]  { hoursActual } — отчёт по факту, обновляет остаток операции
 ```
-`*` SHOP_MASTER может закреплять только операции, чей текущий и целевой ресурс относятся к его цеху (`user.shopId`).
+`*` SHOP_MASTER — только в пределах своего цеха (`user.shopId`).
+
+## Работники, наряды и разряды — как это работает
+
+Это надстройка над обычным графиком (`/api/schedule`), которая распределяет уже посчитанные часы
+по конкретным людям на конкретный день:
+
+1. У операции в справочнике (`catalogOperations.requiredGrade`) задан минимальный разряд рабочего
+2. У каждого работника (`workers.grade`) — его разряд; работник закреплён за одним участком
+3. `POST /api/work-orders/generate` берёт результат обычного расчёта графика, вырезает часы,
+   попадающие в окно конкретного дня (`dayOffset`: 0 = сегодня, 1 = завтра, ...), и на каждом шаге
+   отдаёт их **наименее загруженному сегодня** работнику среди тех, кто по разряду допущен к этой
+   операции — так нагрузка распределяется равномерно с учётом квалификации
+4. Часы, для которых на участке нет ни одного подходящего по разряду работника, остаются
+   `unassignedHours` — они никуда не теряются, просто дальше не распределены на людей (но по-прежнему
+   учтены в обычном графике участка)
+5. `POST /api/work-orders/items/:id/report` фиксирует факт. У операции появляется `completedHours`;
+   при следующем расчёте графика (`/api/schedule`) планируется уже **остаток** —
+   `durationHours - completedHours`. Если рабочий не успел — остаток на завтра сформируется сам,
+   с тем же приоритетом, без отдельного кода "переноса"
+6. `POST /api/work-orders/generate` идемпотентен: повторный вызов на тот же `dayOffset` полностью
+   пересоздаёт наряды этого дня из актуального состояния — это и есть "пересчитать распределение"
+
+**Важное упрощение:** дни считаются от текущего момента (`dayOffset` 0/1/2/...), а не от жёстко
+привязанной календарной даты — как и вся остальная модель времени в этой системе (см. `deadlineHours`
+у проектов). Поле `date` в наряде — это реальная календарная дата, но только для отображения,
+на расчёт она не влияет.
+
+**Осознанно не реализовано (следующий шаг при необходимости):** у самих работников пока нет входа
+в систему — отчитывается по нарядам мастер цеха (или администратор), а не сам рабочий. Добавить
+отдельную роль WORKER с логином на человека — отдельная, не самая большая доработка авторизации
+поверх уже готовой ролевой модели.
 
 ## Что уже проверено (не просто написано — прогнано против реальной PostgreSQL)
 

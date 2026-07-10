@@ -64,6 +64,7 @@ ordersRouter.post('/', requireRole('ADMIN', 'DISPATCHER'), asyncHandler(async (r
       durationHours: +((cat.normMinutes / 60) * it.qty).toFixed(2),
       sequence: idx + 1,
       resourceId: cat.resourceId,
+      catalogOperationId: cat.id,
     };
   });
   const insertedOps = await db.insert(orderOperations).values(opsToInsert).returning();
@@ -99,6 +100,7 @@ ordersRouter.post('/urgent-quick', requireRole('ADMIN', 'DISPATCHER'), asyncHand
       durationHours: +(cat.normMinutes / 60).toFixed(2),
       sequence: idx + 1,
       resourceId: cat.resourceId,
+      catalogOperationId: cat.id,
     })),
   ).returning();
 

@@ -52,6 +52,7 @@ export const catalogOperations = pgTable('catalog_operations', {
   node: text('node').notNull(),         // "узел сборки" из карты нормирования
   name: text('name').notNull(),          // вид работ
   normMinutes: doublePrecision('norm_minutes').notNull(),
+  requiredGrade: integer('required_grade').notNull().default(1), // минимальный разряд рабочего, способного делать операцию
   resourceId: uuid('resource_id').notNull().references(() => resources.id),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
@@ -110,9 +111,49 @@ export const orderOperations = pgTable('order_operations', {
   durationHours: doublePrecision('duration_hours').notNull(),
   sequence: integer('sequence').notNull(), // порядок внутри заказа — резка раньше сварки
   resourceId: uuid('resource_id').notNull().references(() => resources.id),
+  // Ссылка на операцию справочника — нужна, чтобы знать требуемый разряд при формировании нарядов.
+  // Может быть null для очень старых/ручных операций, созданных до этого поля.
+  catalogOperationId: uuid('catalog_operation_id').references(() => catalogOperations.id),
+  // Сколько часов уже реально отработано по этой операции (из отчётов по нарядам).
+  // Остаток для планирования = durationHours - completedHours. Так «невыполненное» само
+  // остаётся в расчёте на завтра — не нужен отдельный код переноса.
+  completedHours: doublePrecision('completed_hours').notNull().default(0),
   // Ручное закрепление диспетчером/мастером цеха — если задано, авторасчёт эту операцию не трогает.
   pinnedStart: doublePrecision('pinned_start'),
   pinnedResourceId: uuid('pinned_resource_id').references(() => resources.id),
+});
+
+// ---------- Работники участка ----------
+export const workers = pgTable('workers', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  name: text('name').notNull(),
+  grade: integer('grade').notNull(), // разряд — чем выше, тем к более сложным операциям допущен
+  resourceId: uuid('resource_id').notNull().references(() => resources.id),
+  active: boolean('active').notNull().default(true),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+// ---------- Наряд: набор операций, назначенных конкретному работнику на конкретный день ----------
+// dayOffset — целое число дней от "сейчас" (0 = сегодня, 1 = завтра, ...), в той же условной
+// шкале времени, что и весь график (час 0 = текущий момент). date — реальная календарная дата
+// для отображения человеку, определяется на момент формирования наряда.
+export const workOrders = pgTable('work_orders', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  workerId: uuid('worker_id').notNull().references(() => workers.id, { onDelete: 'cascade' }),
+  resourceId: uuid('resource_id').notNull().references(() => resources.id),
+  dayOffset: integer('day_offset').notNull(),
+  date: text('date').notNull(), // 'YYYY-MM-DD', для отображения
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const workOrderItems = pgTable('work_order_items', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  workOrderId: uuid('work_order_id').notNull().references(() => workOrders.id, { onDelete: 'cascade' }),
+  orderOperationId: uuid('order_operation_id').notNull().references(() => orderOperations.id, { onDelete: 'cascade' }),
+  hoursPlanned: doublePrecision('hours_planned').notNull(),
+  hoursActual: doublePrecision('hours_actual'), // null = ещё не отчитались
+  reportedById: uuid('reported_by_id').references(() => users.id),
+  reportedAt: timestamp('reported_at'),
 });
 
 // ================= RELATIONS (для удобных вложенных выборок) =================
@@ -155,7 +196,26 @@ export const ordersRelations = relations(orders, ({ one, many }) => ({
   operations: many(orderOperations),
 }));
 
-export const orderOperationsRelations = relations(orderOperations, ({ one }) => ({
+export const orderOperationsRelations = relations(orderOperations, ({ one, many }) => ({
   order: one(orders, { fields: [orderOperations.orderId], references: [orders.id] }),
   resource: one(resources, { fields: [orderOperations.resourceId], references: [resources.id] }),
+  catalogOperation: one(catalogOperations, { fields: [orderOperations.catalogOperationId], references: [catalogOperations.id] }),
+  workOrderItems: many(workOrderItems),
+}));
+
+export const workersRelations = relations(workers, ({ one, many }) => ({
+  resource: one(resources, { fields: [workers.resourceId], references: [resources.id] }),
+  workOrders: many(workOrders),
+}));
+
+export const workOrdersRelations = relations(workOrders, ({ one, many }) => ({
+  worker: one(workers, { fields: [workOrders.workerId], references: [workers.id] }),
+  resource: one(resources, { fields: [workOrders.resourceId], references: [resources.id] }),
+  items: many(workOrderItems),
+}));
+
+export const workOrderItemsRelations = relations(workOrderItems, ({ one }) => ({
+  workOrder: one(workOrders, { fields: [workOrderItems.workOrderId], references: [workOrders.id] }),
+  orderOperation: one(orderOperations, { fields: [workOrderItems.orderOperationId], references: [orderOperations.id] }),
+  reportedBy: one(users, { fields: [workOrderItems.reportedById], references: [users.id] }),
 }));

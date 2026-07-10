@@ -8,6 +8,13 @@
       "when": 1783312407903,
       "tag": "0000_crazy_mongoose",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1783576857068,
+      "tag": "0001_classy_masque",
+      "breakpoints": true
     }
   ]
 }

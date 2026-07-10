@@ -12,6 +12,8 @@ import { modificationsRouter } from './modules/modifications/modifications.route
 import { projectsRouter } from './modules/projects/projects.routes';
 import { ordersRouter } from './modules/orders/orders.routes';
 import { scheduleRouter } from './modules/schedule/schedule.routes';
+import { workersRouter } from './modules/workers/workers.routes';
+import { workOrdersRouter } from './modules/workOrders/workOrders.routes';
 
 export function createApp() {
   const app = express();
@@ -35,6 +37,8 @@ export function createApp() {
   app.use('/api/projects', projectsRouter);
   app.use('/api/orders', ordersRouter);
   app.use('/api/schedule', scheduleRouter);
+  app.use('/api/workers', workersRouter);
+  app.use('/api/work-orders', workOrdersRouter);
 
   app.use((_req, res) => res.status(404).json({ error: 'Маршрут не найден' }));
   app.use(errorHandler);

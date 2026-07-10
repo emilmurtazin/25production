@@ -32,7 +32,10 @@ export interface OrderOperationInput {
   deadlineHours: number;
   orderCreatedAt: number; // timestamp (мс) — тай-брейкер сортировки внутри одного приоритета/срока
   name: string;
-  durationHours: number;
+  durationHours: number; // полная норма (для отображения)
+  completedHours: number; // сколько уже реально отработано по нарядам
+  catalogOperationId: string | null;
+  requiredGrade: number; // минимальный разряд рабочего для этой операции
   sequence: number;
   resourceId: string;
   pinnedStart: number | null;
@@ -44,6 +47,7 @@ export interface ScheduleSegment { start: number; end: number; }
 export interface ScheduledOperation extends OrderOperationInput {
   effectiveResourceId: string;
   pinned: boolean;
+  remainingHours: number;
   start: number;
   end: number;
   segments: ScheduleSegment[];
@@ -122,10 +126,15 @@ export function computeSchedule(
   const orderCursor: Record<string, number> = {};
   resourcesById.forEach((_, id) => { resourceCursor[id] = 0; });
 
-  const withResource = operations.map((op) => {
-    const effectiveResourceId = op.pinnedResourceId || op.resourceId;
-    return { ...op, effectiveResourceId, pinned: op.pinnedStart != null };
-  });
+  const withResource = operations
+    .map((op) => {
+      const effectiveResourceId = op.pinnedResourceId || op.resourceId;
+      const remainingHours = Math.max(0, op.durationHours - (op.completedHours || 0));
+      return { ...op, effectiveResourceId, remainingHours, pinned: op.pinnedStart != null };
+    })
+    // Полностью выполненные операции (остаток 0) в графике загрузки больше не занимают время —
+    // они уже сделаны, их незачем планировать заново.
+    .filter((op) => op.remainingHours > 1e-9 || op.pinned);
 
   const pinned = withResource.filter((o) => o.pinned);
   const free = withResource.filter((o) => !o.pinned);
@@ -135,7 +144,9 @@ export function computeSchedule(
 
   pinned.forEach((op) => {
     const start = op.pinnedStart as number;
-    const end = start + op.durationHours;
+    // Закреплённая вручную операция всегда занимает ровно остаток — если её уже частично сделали,
+    // блок на графике короче исходной нормы.
+    const end = start + op.remainingHours;
     (pinnedByResource[op.effectiveResourceId] ??= []).push({ start, end });
     orderCursor[op.orderId] = Math.max(orderCursor[op.orderId] ?? 0, end);
     scheduled.push({ ...op, start, end, segments: [{ start, end }] });
@@ -154,13 +165,13 @@ export function computeSchedule(
     if (!resource) return; // ресурс удалён — операция пропускается (защита от рассинхронизации данных)
 
     let candidate = Math.max(resourceCursor[op.effectiveResourceId] ?? 0, orderCursor[op.orderId]);
-    let result = addWorkingDuration(candidate, op.durationHours, resource);
+    let result = addWorkingDuration(candidate, op.remainingHours, resource);
     let guard = 0;
     while (guard < 20) {
       const conflict = findPinnedOverlap(result.segments, pinnedByResource[op.effectiveResourceId]);
       if (!conflict) break;
       candidate = conflict.end;
-      result = addWorkingDuration(candidate, op.durationHours, resource);
+      result = addWorkingDuration(candidate, op.remainingHours, resource);
       guard += 1;
     }
 
