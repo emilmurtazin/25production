@@ -1,7 +1,7 @@
 import { apiFetch, setToken } from './client';
 import type {
   User, Shop, Resource, CatalogOperation, Measurement, Modification, Project, Order, ScheduleResponse,
-  Priority, Worker, WorkOrder, GenerateWorkOrdersResult,
+  Priority, Worker, WorkOrder, GenerateWorkOrdersResult, AnalyticsOverview,
 } from './types';
 
 // ---------- auth ----------
@@ -157,4 +157,9 @@ export function fetchWorkOrders(params: { dayOffset?: number; workerId?: string;
 }
 export function reportWorkOrderItem(itemId: string, hoursActual: number): Promise<WorkOrder['items'][number]> {
   return apiFetch(`/work-orders/items/${itemId}/report`, { method: 'POST', body: { hoursActual } });
+}
+
+// ---------- analytics ----------
+export function fetchAnalyticsOverview(): Promise<AnalyticsOverview> {
+  return apiFetch('/analytics/overview');
 }

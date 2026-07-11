@@ -90,6 +90,65 @@ export interface GenerateWorkOrdersResult {
   resources: Record<string, { workerCount: number; assignedHours: number; unassignedHours: number }>;
 }
 
+export interface AnalyticsProject {
+  id: string;
+  name: string;
+  client: string;
+  deadlineHours: number;
+  projectedCompletionHours: number | null;
+  atRisk: boolean;
+  overdueByHours: number;
+  remainingOperations: number;
+  remainingHours: number;
+}
+
+export interface AnalyticsShop {
+  id: string;
+  name: string;
+  utilizationPercent: number;
+  overloadedResources: number;
+  totalResources: number;
+  totalRemainingHours: number;
+}
+
+export interface AnalyticsResource {
+  id: string;
+  name: string;
+  shopId: string;
+  shopName: string;
+  remainingHours: number;
+  availableHours: number;
+  utilizationPercent: number;
+  overloaded: boolean;
+}
+
+export interface AnalyticsWorker {
+  workerId: string;
+  name: string;
+  grade: number;
+  plannedHours: number;
+  actualHours: number;
+  efficiencyPercent: number | null;
+  reportRatePercent: number | null;
+}
+
+export interface AnalyticsOverview {
+  generatedAt: string;
+  windowHours: number;
+  reportPeriod: { from: string; to: string };
+  totals: {
+    activeProjects: number;
+    atRiskProjects: number;
+    totalOrders: number;
+    totalRemainingHours: number;
+    overallCompletionPercent: number;
+  };
+  projects: AnalyticsProject[];
+  shops: AnalyticsShop[];
+  resources: AnalyticsResource[];
+  workers: AnalyticsWorker[];
+}
+
 export interface ModificationItem {
   id: string;
   modificationId: string;

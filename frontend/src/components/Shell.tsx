@@ -4,8 +4,9 @@ import { BoardView } from '../views/BoardView';
 import { ProjectsView } from '../views/ProjectsView';
 import { CatalogView } from '../views/CatalogView';
 import { WorkOrdersView } from '../views/WorkOrdersView';
+import { AnalyticsView } from '../views/AnalyticsView';
 
-type Tab = 'board' | 'projects' | 'catalog' | 'workOrders';
+type Tab = 'board' | 'projects' | 'catalog' | 'workOrders' | 'analytics';
 
 const ROLE_LABELS: Record<string, string> = {
   ADMIN: 'Администратор',
@@ -45,12 +46,16 @@ export function Shell() {
         <button className={`tab-btn ${tab === 'workOrders' ? 'active' : ''}`} onClick={() => setTab('workOrders')}>
           👷 Работники и наряды
         </button>
+        <button className={`tab-btn ${tab === 'analytics' ? 'active' : ''}`} onClick={() => setTab('analytics')}>
+          📊 Аналитика
+        </button>
       </div>
 
       {tab === 'board' && <BoardView />}
       {tab === 'projects' && <ProjectsView />}
       {tab === 'catalog' && <CatalogView />}
       {tab === 'workOrders' && <WorkOrdersView />}
+      {tab === 'analytics' && <AnalyticsView />}
     </div>
   );
 }
