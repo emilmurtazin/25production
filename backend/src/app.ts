@@ -14,6 +14,7 @@ import { ordersRouter } from './modules/orders/orders.routes';
 import { scheduleRouter } from './modules/schedule/schedule.routes';
 import { workersRouter } from './modules/workers/workers.routes';
 import { workOrdersRouter } from './modules/workOrders/workOrders.routes';
+import { analyticsRouter } from './modules/analytics/analytics.routes';
 
 export function createApp() {
   const app = express();
@@ -39,6 +40,7 @@ export function createApp() {
   app.use('/api/schedule', scheduleRouter);
   app.use('/api/workers', workersRouter);
   app.use('/api/work-orders', workOrdersRouter);
+  app.use('/api/analytics', analyticsRouter);
 
   app.use((_req, res) => res.status(404).json({ error: 'Маршрут не найден' }));
   app.use(errorHandler);
