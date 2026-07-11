@@ -25,6 +25,7 @@ export function CatalogView() {
   const [node, setNode] = useState('');
   const [name, setName] = useState('');
   const [minutes, setMinutes] = useState('');
+  const [requiredGrade, setRequiredGrade] = useState(1);
   const [resourceId, setResourceId] = useState('');
 
   const [modBuilderOpen, setModBuilderOpen] = useState(false);
@@ -51,8 +52,8 @@ export function CatalogView() {
     e.preventDefault();
     if (!node.trim() || !name.trim() || !minutes || !resourceId) return;
     try {
-      await createCatalogOperation({ node: node.trim(), name: name.trim(), normMinutes: Number(minutes), resourceId });
-      setNode(''); setName(''); setMinutes('');
+      await createCatalogOperation({ node: node.trim(), name: name.trim(), normMinutes: Number(minutes), requiredGrade, resourceId });
+      setNode(''); setName(''); setMinutes(''); setRequiredGrade(1);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Не удалось добавить операцию');
@@ -122,6 +123,7 @@ export function CatalogView() {
             <tr>
               <th>Узел сборки</th><th>Операция</th>
               <th className="num">Норма, мин</th><th className="num">Норма, час</th>
+              <th className="num">Мин. разряд</th>
               <th>Ресурс</th><th />
             </tr>
           </thead>
@@ -136,6 +138,7 @@ export function CatalogView() {
                     <td>{c.name}</td>
                     <td className="num">{c.normMinutes}</td>
                     <td className="num">{c.normHours}</td>
+                    <td className="num">{c.requiredGrade}</td>
                     <td>{resources.find((r) => r.id === c.resourceId)?.name ?? c.resourceId}</td>
                     <td>
                       <button
@@ -150,7 +153,7 @@ export function CatalogView() {
                   </tr>
                   {isOpen && (
                     <tr>
-                      <td colSpan={6} style={{ background: 'var(--surface-2)' }}>
+                      <td colSpan={7} style={{ background: 'var(--surface-2)' }}>
                         <div style={{ padding: '10px 0' }}>
                           <div className="timer-controls">
                             {isTiming ? (
@@ -199,6 +202,9 @@ export function CatalogView() {
             <input placeholder="Узел сборки" value={node} onChange={(e) => setNode(e.target.value)} />
             <input placeholder="Операция" value={name} onChange={(e) => setName(e.target.value)} style={{ flex: 2 }} />
             <input type="number" min={0.1} step={0.1} placeholder="Норма, мин" value={minutes} onChange={(e) => setMinutes(e.target.value)} style={{ flex: '0 1 120px' }} />
+            <select value={requiredGrade} onChange={(e) => setRequiredGrade(Number(e.target.value))} style={{ flex: '0 1 130px' }}>
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((g) => <option key={g} value={g}>Мин. разряд {g}</option>)}
+            </select>
             <select value={resourceId} onChange={(e) => setResourceId(e.target.value)}>
               {resources.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
             </select>

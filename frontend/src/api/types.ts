@@ -45,10 +45,49 @@ export interface CatalogOperation {
   name: string;
   normMinutes: number;
   normHours: number;
+  requiredGrade: number;
   resourceId: string;
   createdAt: string;
   updatedAt: string;
   measurements: Measurement[];
+}
+
+export interface Worker {
+  id: string;
+  name: string;
+  grade: number;
+  resourceId: string;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface WorkOrderItem {
+  id: string;
+  workOrderId: string;
+  orderOperationId: string;
+  hoursPlanned: number;
+  hoursActual: number | null;
+  reportedById: string | null;
+  reportedAt: string | null;
+  orderOperation: OrderOperation & { order: Order };
+}
+
+export interface WorkOrder {
+  id: string;
+  workerId: string;
+  resourceId: string;
+  dayOffset: number;
+  date: string;
+  createdAt: string;
+  worker: Worker;
+  resource: Resource;
+  items: WorkOrderItem[];
+}
+
+export interface GenerateWorkOrdersResult {
+  dayOffset: number;
+  date: string;
+  resources: Record<string, { workerCount: number; assignedHours: number; unassignedHours: number }>;
 }
 
 export interface ModificationItem {

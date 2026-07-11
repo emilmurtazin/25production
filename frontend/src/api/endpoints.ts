@@ -1,7 +1,7 @@
 import { apiFetch, setToken } from './client';
 import type {
   User, Shop, Resource, CatalogOperation, Measurement, Modification, Project, Order, ScheduleResponse,
-  Priority,
+  Priority, Worker, WorkOrder, GenerateWorkOrdersResult,
 } from './types';
 
 // ---------- auth ----------
@@ -55,10 +55,10 @@ export function deleteResource(id: string): Promise<void> {
 export function fetchCatalog(): Promise<CatalogOperation[]> {
   return apiFetch('/catalog');
 }
-export function createCatalogOperation(data: { node: string; name: string; normMinutes: number; resourceId: string }): Promise<CatalogOperation> {
+export function createCatalogOperation(data: { node: string; name: string; normMinutes: number; requiredGrade: number; resourceId: string }): Promise<CatalogOperation> {
   return apiFetch('/catalog', { method: 'POST', body: data });
 }
-export function updateCatalogOperation(id: string, data: Partial<{ node: string; name: string; normMinutes: number; resourceId: string }>): Promise<CatalogOperation> {
+export function updateCatalogOperation(id: string, data: Partial<{ node: string; name: string; normMinutes: number; requiredGrade: number; resourceId: string }>): Promise<CatalogOperation> {
   return apiFetch(`/catalog/${id}`, { method: 'PATCH', body: data });
 }
 export function deleteCatalogOperation(id: string): Promise<void> {
@@ -127,4 +127,34 @@ export function unpinOperation(opId: string): Promise<Order> {
 // ---------- schedule ----------
 export function fetchSchedule(): Promise<ScheduleResponse> {
   return apiFetch('/schedule');
+}
+
+// ---------- workers ----------
+export function fetchWorkers(resourceId?: string): Promise<Worker[]> {
+  return apiFetch(resourceId ? `/workers?resourceId=${resourceId}` : '/workers');
+}
+export function createWorker(data: { name: string; grade: number; resourceId: string }): Promise<Worker> {
+  return apiFetch('/workers', { method: 'POST', body: data });
+}
+export function updateWorker(id: string, data: Partial<{ name: string; grade: number; active: boolean }>): Promise<Worker> {
+  return apiFetch(`/workers/${id}`, { method: 'PATCH', body: data });
+}
+export function deleteWorker(id: string): Promise<void> {
+  return apiFetch(`/workers/${id}`, { method: 'DELETE' });
+}
+
+// ---------- work orders (наряды) ----------
+export function generateWorkOrders(dayOffset: number, resourceId?: string): Promise<GenerateWorkOrdersResult> {
+  return apiFetch('/work-orders/generate', { method: 'POST', body: { dayOffset, resourceId } });
+}
+export function fetchWorkOrders(params: { dayOffset?: number; workerId?: string; resourceId?: string } = {}): Promise<WorkOrder[]> {
+  const qs = new URLSearchParams();
+  if (params.dayOffset !== undefined) qs.set('dayOffset', String(params.dayOffset));
+  if (params.workerId) qs.set('workerId', params.workerId);
+  if (params.resourceId) qs.set('resourceId', params.resourceId);
+  const query = qs.toString();
+  return apiFetch(`/work-orders${query ? `?${query}` : ''}`);
+}
+export function reportWorkOrderItem(itemId: string, hoursActual: number): Promise<WorkOrder['items'][number]> {
+  return apiFetch(`/work-orders/items/${itemId}/report`, { method: 'POST', body: { hoursActual } });
 }

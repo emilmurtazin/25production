@@ -3,8 +3,9 @@ import { useAuth } from '../context/AuthContext';
 import { BoardView } from '../views/BoardView';
 import { ProjectsView } from '../views/ProjectsView';
 import { CatalogView } from '../views/CatalogView';
+import { WorkOrdersView } from '../views/WorkOrdersView';
 
-type Tab = 'board' | 'projects' | 'catalog';
+type Tab = 'board' | 'projects' | 'catalog' | 'workOrders';
 
 const ROLE_LABELS: Record<string, string> = {
   ADMIN: 'Администратор',
@@ -41,11 +42,15 @@ export function Shell() {
         <button className={`tab-btn ${tab === 'catalog' ? 'active' : ''}`} onClick={() => setTab('catalog')}>
           📖 Справочник операций
         </button>
+        <button className={`tab-btn ${tab === 'workOrders' ? 'active' : ''}`} onClick={() => setTab('workOrders')}>
+          👷 Работники и наряды
+        </button>
       </div>
 
       {tab === 'board' && <BoardView />}
       {tab === 'projects' && <ProjectsView />}
       {tab === 'catalog' && <CatalogView />}
+      {tab === 'workOrders' && <WorkOrdersView />}
     </div>
   );
 }
