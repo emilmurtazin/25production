@@ -1,12 +1,11 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { BoardView } from '../views/BoardView';
-import { ProjectsView } from '../views/ProjectsView';
+import { WorkersBoardView } from '../views/WorkersBoardView';
+import { OrdersView } from '../views/OrdersView';
 import { CatalogView } from '../views/CatalogView';
-import { WorkOrdersView } from '../views/WorkOrdersView';
 import { AnalyticsView } from '../views/AnalyticsView';
 
-type Tab = 'board' | 'projects' | 'catalog' | 'workOrders' | 'analytics';
+type Tab = 'board' | 'orders' | 'catalog' | 'analytics';
 
 const ROLE_LABELS: Record<string, string> = {
   ADMIN: 'Администратор',
@@ -35,26 +34,22 @@ export function Shell() {
 
       <div className="tabbar">
         <button className={`tab-btn ${tab === 'board' ? 'active' : ''}`} onClick={() => setTab('board')}>
-          📅 График загрузки
+          👷 Кто чем загружен
         </button>
-        <button className={`tab-btn ${tab === 'projects' ? 'active' : ''}`} onClick={() => setTab('projects')}>
-          📁 Проекты
+        <button className={`tab-btn ${tab === 'orders' ? 'active' : ''}`} onClick={() => setTab('orders')}>
+          📋 Заказы
         </button>
         <button className={`tab-btn ${tab === 'catalog' ? 'active' : ''}`} onClick={() => setTab('catalog')}>
-          📖 Справочник операций
-        </button>
-        <button className={`tab-btn ${tab === 'workOrders' ? 'active' : ''}`} onClick={() => setTab('workOrders')}>
-          👷 Работники и наряды
+          📖 Справочник и изделия
         </button>
         <button className={`tab-btn ${tab === 'analytics' ? 'active' : ''}`} onClick={() => setTab('analytics')}>
           📊 Аналитика
         </button>
       </div>
 
-      {tab === 'board' && <BoardView />}
-      {tab === 'projects' && <ProjectsView />}
+      {tab === 'board' && <WorkersBoardView />}
+      {tab === 'orders' && <OrdersView />}
       {tab === 'catalog' && <CatalogView />}
-      {tab === 'workOrders' && <WorkOrdersView />}
       {tab === 'analytics' && <AnalyticsView />}
     </div>
   );

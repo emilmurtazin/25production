@@ -61,6 +61,82 @@ export interface Worker {
   createdAt: string;
 }
 
+// ---------- Изделия (бывшие "модификации") ----------
+export interface ProductItem {
+  id: string;
+  productId: string;
+  catalogOperationId: string;
+  qty: number;
+  catalogOperation: CatalogOperation;
+}
+
+export interface Product {
+  id: string;
+  name: string;
+  createdAt: string;
+  items: ProductItem[];
+  totalHours: number;
+}
+
+// ---------- Заказы (проект и заказ объединены — client/срок хранятся прямо на заказе) ----------
+export interface OrderOperation {
+  id: string;
+  orderId: string;
+  name: string;
+  durationHours: number;
+  completedHours: number;
+  sequence: number;
+  resourceId: string;
+  catalogOperationId: string | null;
+  pinnedStart: number | null;
+  pinnedResourceId: string | null;
+}
+
+export interface Order {
+  id: string;
+  name: string;
+  client: string;
+  deadlineDate: string; // 'YYYY-MM-DD'
+  priority: Priority;
+  createdById: string | null;
+  createdAt: string;
+  operations: OrderOperation[];
+}
+
+// ---------- Расписание ----------
+export interface ScheduleSegment { start: number; end: number; }
+
+export interface ScheduledOperation {
+  id: string;
+  orderId: string;
+  orderName: string;
+  client: string;
+  priority: Priority;
+  deadlineHours: number;
+  name: string;
+  durationHours: number;
+  completedHours: number;
+  remainingHours: number;
+  catalogOperationId: string | null;
+  requiredGrade: number;
+  sequence: number;
+  resourceId: string;
+  effectiveResourceId: string;
+  pinned: boolean;
+  pinnedStart: number | null;
+  pinnedResourceId: string | null;
+  start: number;
+  end: number;
+  segments: ScheduleSegment[];
+}
+
+export interface ScheduleResponse {
+  resources: (Resource & { shopName: string; calendar: ShopCalendarFields })[];
+  shops: Shop[];
+  operations: ScheduledOperation[];
+}
+
+// ---------- Наряды ----------
 export interface WorkOrderItem {
   id: string;
   workOrderId: string;
@@ -90,11 +166,23 @@ export interface GenerateWorkOrdersResult {
   resources: Record<string, { workerCount: number; assignedHours: number; unassignedHours: number }>;
 }
 
-export interface AnalyticsProject {
+export interface GenerateWorkOrdersRangeResult {
+  fromDayOffset: number;
+  toDayOffset: number;
+  days: Record<number, Record<string, { workerCount: number; assignedHours: number; unassignedHours: number }>>;
+}
+
+export interface ReassignWorkOrderItemResult extends WorkOrderItem {
+  workOrder: WorkOrder;
+  warning: string | null;
+}
+
+// ---------- Аналитика ----------
+export interface AnalyticsOrder {
   id: string;
   name: string;
   client: string;
-  deadlineHours: number;
+  deadlineDate: string;
   projectedCompletionHours: number | null;
   atRisk: boolean;
   overdueByHours: number;
@@ -137,92 +225,13 @@ export interface AnalyticsOverview {
   windowHours: number;
   reportPeriod: { from: string; to: string };
   totals: {
-    activeProjects: number;
-    atRiskProjects: number;
-    totalOrders: number;
+    activeOrders: number;
+    atRiskOrders: number;
     totalRemainingHours: number;
     overallCompletionPercent: number;
   };
-  projects: AnalyticsProject[];
+  orders: AnalyticsOrder[];
   shops: AnalyticsShop[];
   resources: AnalyticsResource[];
   workers: AnalyticsWorker[];
-}
-
-export interface ModificationItem {
-  id: string;
-  modificationId: string;
-  catalogOperationId: string;
-  qty: number;
-  catalogOperation: CatalogOperation;
-}
-
-export interface Modification {
-  id: string;
-  name: string;
-  createdAt: string;
-  items: ModificationItem[];
-  totalHours: number;
-}
-
-export interface Project {
-  id: string;
-  name: string;
-  client: string;
-  object: string;
-  deadlineHours: number;
-  createdAt: string;
-  orders?: Order[];
-}
-
-export interface OrderOperation {
-  id: string;
-  orderId: string;
-  name: string;
-  durationHours: number;
-  sequence: number;
-  resourceId: string;
-  pinnedStart: number | null;
-  pinnedResourceId: string | null;
-}
-
-export interface Order {
-  id: string;
-  name: string;
-  projectId: string;
-  priority: Priority;
-  createdById: string | null;
-  createdAt: string;
-  operations: OrderOperation[];
-  project?: Project;
-}
-
-export interface ScheduleSegment { start: number; end: number; }
-
-export interface ScheduledOperation {
-  id: string;
-  orderId: string;
-  orderName: string;
-  projectId: string;
-  projectName: string;
-  client: string;
-  priority: Priority;
-  deadlineHours: number;
-  name: string;
-  durationHours: number;
-  sequence: number;
-  resourceId: string;
-  effectiveResourceId: string;
-  pinned: boolean;
-  pinnedStart: number | null;
-  pinnedResourceId: string | null;
-  start: number;
-  end: number;
-  segments: ScheduleSegment[];
-}
-
-export interface ScheduleResponse {
-  resources: (Resource & { shopName: string; calendar: ShopCalendarFields })[];
-  shops: Shop[];
-  operations: ScheduledOperation[];
 }

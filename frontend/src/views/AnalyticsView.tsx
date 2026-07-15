@@ -23,8 +23,8 @@ export function AnalyticsView() {
   if (loading) return <div className="loading-state">Считаю аналитику…</div>;
   if (!data) return <div className="error-banner">{error ?? 'Нет данных'}</div>;
 
-  const atRiskProjects = data.projects.filter((p) => p.atRisk);
-  const okProjects = data.projects.filter((p) => !p.atRisk);
+  const atRiskOrders = data.orders.filter((p) => p.atRisk);
+  const okProjects = data.orders.filter((p) => !p.atRisk);
 
   return (
     <div>
@@ -32,11 +32,11 @@ export function AnalyticsView() {
         <div className="title-block">
           <span className="eyebrow">MVP · Аналитика</span>
           <h1>Загрузка, сроки, эффективность</h1>
-          <p>Прогноз завершения проектов считается тем же алгоритмом, что и график — это не отдельная догадка, а прямое следствие текущего плана.</p>
+          <p>Прогноз завершения заказов считается тем же алгоритмом, что и график — это не отдельная догадка, а прямое следствие текущего плана.</p>
         </div>
         <div className="kpis">
-          <div className="kpi"><div className="val">{data.totals.activeProjects}</div><div className="lbl">проектов</div></div>
-          <div className={`kpi ${data.totals.atRiskProjects > 0 ? 'warn' : 'good'}`}><div className="val">{data.totals.atRiskProjects}</div><div className="lbl">под угрозой срыва</div></div>
+          <div className="kpi"><div className="val">{data.totals.activeOrders}</div><div className="lbl">заказов</div></div>
+          <div className={`kpi ${data.totals.atRiskOrders > 0 ? 'warn' : 'good'}`}><div className="val">{data.totals.atRiskOrders}</div><div className="lbl">под угрозой срыва</div></div>
           <div className="kpi"><div className="val">{data.totals.totalRemainingHours}</div><div className="lbl">часов осталось</div></div>
           <div className="kpi good"><div className="val">{data.totals.overallCompletionPercent}%</div><div className="lbl">выполнено всего</div></div>
         </div>
@@ -46,29 +46,29 @@ export function AnalyticsView() {
       <button onClick={load} style={{ marginBottom: 16 }}>↻ Обновить</button>
 
       {/* ---- Срывы сроков ---- */}
-      <div className="panel" style={atRiskProjects.length ? { borderColor: 'var(--rose)' } : undefined}>
-        <div style={{ fontWeight: 600, marginBottom: 10 }}>Сроки проектов</div>
+      <div className="panel" style={atRiskOrders.length ? { borderColor: 'var(--rose)' } : undefined}>
+        <div style={{ fontWeight: 600, marginBottom: 10 }}>Сроки заказов</div>
         <table className="data-table">
           <thead>
             <tr>
-              <th>Проект</th><th>Клиент</th>
-              <th className="num">Срок, ч</th><th className="num">Прогноз, ч</th>
+              <th>Заказ</th><th>Клиент</th>
+              <th className="num">Срок сдачи</th><th className="num">Прогноз, ч</th>
               <th className="num">Отставание</th><th>Статус</th>
             </tr>
           </thead>
           <tbody>
-            {[...atRiskProjects, ...okProjects].map((p) => (
+            {[...atRiskOrders, ...okProjects].map((p) => (
               <tr key={p.id}>
                 <td>{p.name}</td>
                 <td>{p.client}</td>
-                <td className="num">{p.deadlineHours}</td>
+                <td className="num">{p.deadlineDate}</td>
                 <td className="num">{p.projectedCompletionHours ?? '—'}</td>
                 <td className="num" style={{ color: p.atRisk ? 'var(--rose)' : undefined }}>
                   {p.atRisk ? `+${p.overdueByHours} ч` : '—'}
                 </td>
                 <td>
                   {p.projectedCompletionHours === null
-                    ? <span className="hint">выполнен / нет заказов</span>
+                    ? <span className="hint">выполнен / нет операций</span>
                     : p.atRisk
                       ? <span style={{ color: 'var(--rose)' }}>⚠ риск срыва</span>
                       : <span style={{ color: 'var(--green)' }}>в графике</span>}
@@ -148,7 +148,7 @@ export function AnalyticsView() {
 
       <div className="footer-note">
         <b>Как считается:</b> «Прогноз» — это самая поздняя точка окончания среди ещё не выполненных операций
-        заказов проекта в текущем графике (тот же расчёт, что использует доска планирования). «Загрузка» —
+        операций заказа в текущем графике (тот же расчёт, что использует доска планирования). «Загрузка» —
         отношение оставшихся часов к фонду рабочего времени участка/цеха за ближайшую неделю с учётом календаря
         смен. «Эффективность» работника — факт делить на план по нарядам за последние 7 календарных дней;
         «отчитано» — доля позиций наряда, по которым вообще был подан отчёт (остальное — либо ещё не сделано,

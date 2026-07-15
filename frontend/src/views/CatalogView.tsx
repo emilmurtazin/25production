@@ -1,9 +1,9 @@
 import { Fragment, useEffect, useState, type FormEvent } from 'react';
-import type { CatalogOperation, Modification, Resource } from '../api/types';
+import type { CatalogOperation, Product, Resource } from '../api/types';
 import {
   fetchCatalog, createCatalogOperation, deleteCatalogOperation,
   createMeasurement, deleteMeasurement, applyAverageAsNorm,
-  fetchModifications, createModification, deleteModification,
+  fetchProducts, createProduct, deleteProduct,
   fetchResources,
 } from '../api/endpoints';
 import { useAuth } from '../context/AuthContext';
@@ -15,7 +15,7 @@ export function CatalogView() {
 
   const [catalog, setCatalog] = useState<CatalogOperation[]>([]);
   const [resources, setResources] = useState<Resource[]>([]);
-  const [modifications, setModifications] = useState<Modification[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,10 +32,10 @@ export function CatalogView() {
 
   async function load() {
     try {
-      const [cat, res, mods] = await Promise.all([fetchCatalog(), fetchResources(), fetchModifications()]);
+      const [cat, res, mods] = await Promise.all([fetchCatalog(), fetchResources(), fetchProducts()]);
       setCatalog(cat);
       setResources(res);
-      setModifications(mods);
+      setProducts(mods);
       if (!resourceId && res.length) setResourceId(res[0].id);
       setError(null);
     } catch (e) {
@@ -94,9 +94,9 @@ export function CatalogView() {
     catch (e) { setError(e instanceof Error ? e.message : 'Не удалось удалить замер'); }
   }
 
-  async function handleDeleteModification(id: string) {
-    try { await deleteModification(id); await load(); }
-    catch (e) { setError(e instanceof Error ? e.message : 'Не удалось удалить модификацию'); }
+  async function handleDeleteProduct(id: string) {
+    try { await deleteProduct(id); await load(); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Не удалось удалить изделие'); }
   }
 
   if (loading) return <div className="loading-state">Загружаю справочник…</div>;
@@ -214,16 +214,16 @@ export function CatalogView() {
       </div>
 
       <div className="title-block" style={{ margin: '26px 0 12px' }}>
-        <h1 style={{ fontSize: 17 }}>Модификации изделия</h1>
+        <h1 style={{ fontSize: 17 }}>Изделия</h1>
         <p>Готовые наборы операций для конкретного варианта продукта.</p>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: 12 }}>
-        {modifications.map((m) => (
+        {products.map((m) => (
           <div key={m.id} className="panel" style={{ marginBottom: 0 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <b style={{ fontSize: 13.5 }}>{m.name}</b>
-              {canEdit && <button className="icon-btn" onClick={() => handleDeleteModification(m.id)}>✕</button>}
+              {canEdit && <button className="icon-btn" onClick={() => handleDeleteProduct(m.id)}>✕</button>}
             </div>
             <div className="hint" style={{ margin: '8px 0' }}>{m.items.length} операций · {m.totalHours} ч трудозатрат</div>
           </div>
@@ -231,8 +231,8 @@ export function CatalogView() {
         {canEdit && (
           <div className="panel" style={{ marginBottom: 0, borderStyle: 'dashed', display: 'flex', alignItems: modBuilderOpen ? 'stretch' : 'center', justifyContent: 'center' }}>
             {modBuilderOpen
-              ? <ModificationBuilder catalog={catalog} onDone={() => { setModBuilderOpen(false); load(); }} onCancel={() => setModBuilderOpen(false)} />
-              : <button className="primary" onClick={() => setModBuilderOpen(true)}>+ Новая модификация</button>}
+              ? <ProductBuilder catalog={catalog} onDone={() => { setModBuilderOpen(false); load(); }} onCancel={() => setModBuilderOpen(false)} />
+              : <button className="primary" onClick={() => setModBuilderOpen(true)}>+ Новое изделие</button>}
           </div>
         )}
       </div>
@@ -245,7 +245,7 @@ export function CatalogView() {
   );
 }
 
-function ModificationBuilder({ catalog, onDone, onCancel }: {
+function ProductBuilder({ catalog, onDone, onCancel }: {
   catalog: CatalogOperation[]; onDone: () => void; onCancel: () => void;
 }) {
   const [name, setName] = useState('');
@@ -265,13 +265,13 @@ function ModificationBuilder({ catalog, onDone, onCancel }: {
   async function save() {
     if (!name.trim() || !items.length) return;
     setBusy(true);
-    try { await createModification({ name: name.trim(), items }); onDone(); }
+    try { await createProduct({ name: name.trim(), items }); onDone(); }
     finally { setBusy(false); }
   }
 
   return (
     <div style={{ width: '100%' }}>
-      <input placeholder="Название модификации" value={name} onChange={(e) => setName(e.target.value)} style={{ width: '100%', marginBottom: 10 }} />
+      <input placeholder="Название изделия" value={name} onChange={(e) => setName(e.target.value)} style={{ width: '100%', marginBottom: 10 }} />
       <div className="field-row">
         <select value={selected} onChange={(e) => setSelected(e.target.value)} style={{ flex: 1 }}>
           <option value="">— выберите операцию —</option>
@@ -285,7 +285,7 @@ function ModificationBuilder({ catalog, onDone, onCancel }: {
       })}
       <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
         <button type="button" onClick={onCancel}>Отмена</button>
-        <button type="button" className="primary" onClick={save} disabled={busy}>Сохранить модификацию</button>
+        <button type="button" className="primary" onClick={save} disabled={busy}>Сохранить изделие</button>
       </div>
     </div>
   );
