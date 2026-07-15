@@ -3,57 +3,15 @@ import { z } from 'zod';
 import { eq, and, inArray } from 'drizzle-orm';
 import { db } from '../../db/client';
 import {
-  shops, resources, orders, workers, workOrders, workOrderItems, catalogOperations, orderOperations,
+  resources, workers, workOrders, workOrderItems, orderOperations,
 } from '../../db/schema';
 import { asyncHandler, ApiError } from '../../middleware/errorHandler';
 import { requireAuth, requireRole } from '../../middleware/auth';
-import { computeSchedule, OrderOperationInput, ResourceInput, ScheduledOperation } from '../schedule/scheduling.service';
+import { ScheduledOperation, ResourceInput } from '../schedule/scheduling.service';
+import { loadScheduleContext } from '../schedule/loadSchedule';
 
 export const workOrdersRouter = Router();
 workOrdersRouter.use(requireAuth);
-
-// ===================== Загрузка данных графика (тот же набор, что и GET /api/schedule) =====================
-async function loadScheduledOperations(): Promise<{ scheduled: ScheduledOperation[]; resourcesById: Map<string, ResourceInput> }> {
-  const [shopRows, resourceRows, orderRows, catalogRows] = await Promise.all([
-    db.query.shops.findMany(),
-    db.query.resources.findMany(),
-    db.query.orders.findMany({ with: { operations: true, project: true } }),
-    db.query.catalogOperations.findMany(),
-  ]);
-
-  const shopById = new Map(shopRows.map((s) => [s.id, s]));
-  const catalogById = new Map(catalogRows.map((c) => [c.id, c]));
-
-  const resourcesById = new Map<string, ResourceInput>();
-  resourceRows.forEach((r) => {
-    const shop = shopById.get(r.shopId);
-    if (!shop) return;
-    resourcesById.set(r.id, {
-      id: r.id, name: r.name, type: r.type, alwaysOn: r.alwaysOn,
-      shopId: shop.id, shopName: shop.name,
-      calendar: { workStart: shop.workStart, workEnd: shop.workEnd, workDays: shop.workDays },
-    });
-  });
-
-  const operations: OrderOperationInput[] = [];
-  orderRows.forEach((order) => {
-    order.operations.forEach((op) => {
-      const catalogOp = op.catalogOperationId ? catalogById.get(op.catalogOperationId) : undefined;
-      operations.push({
-        id: op.id, orderId: order.id, orderName: order.name,
-        projectId: order.project.id, projectName: order.project.name, client: order.project.client,
-        priority: order.priority, deadlineHours: order.project.deadlineHours,
-        orderCreatedAt: order.createdAt.getTime(),
-        name: op.name, durationHours: op.durationHours, completedHours: op.completedHours,
-        catalogOperationId: op.catalogOperationId, requiredGrade: catalogOp?.requiredGrade ?? 1,
-        sequence: op.sequence, resourceId: op.resourceId,
-        pinnedStart: op.pinnedStart, pinnedResourceId: op.pinnedResourceId,
-      });
-    });
-  });
-
-  return { scheduled: computeSchedule(operations, resourcesById), resourcesById };
-}
 
 // Пересечение отрезков операции с окном дня [dayStart, dayEnd) — сумма часов, приходящихся на этот день.
 function hoursInDayWindow(op: ScheduledOperation, dayStart: number, dayEnd: number): number {
@@ -69,31 +27,19 @@ function dateStringFor(dayOffset: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-// ===================== Формирование нарядов на день =====================
+// ===================== Формирование нарядов на один день (переиспользуется для одного дня и для диапазона) =====================
 // Равномерное распределение: для каждой операции дня перебираем часы и на каждом шаге отдаём их
 // наименее загруженному сегодня работнику, который по разряду допущен к этой операции.
-const generateSchema = z.object({
-  dayOffset: z.number().int().min(0).max(60),
-  resourceId: z.string().uuid().optional(),
-});
-
-workOrdersRouter.post('/generate', requireRole('ADMIN', 'DISPATCHER', 'SHOP_MASTER'), asyncHandler(async (req, res) => {
-  const { dayOffset, resourceId } = generateSchema.parse(req.body);
+async function generateForDay(
+  dayOffset: number,
+  targetResourceIds: string[],
+  scheduled: ScheduledOperation[],
+  resourcesById: Map<string, ResourceInput>,
+): Promise<Record<string, { workerCount: number; assignedHours: number; unassignedHours: number }>> {
   const dayStart = dayOffset * 24;
   const dayEnd = dayStart + 24;
   const date = dateStringFor(dayOffset);
-
-  const { scheduled, resourcesById } = await loadScheduledOperations();
-
-  let targetResourceIds = Array.from(resourcesById.keys());
-  if (resourceId) targetResourceIds = [resourceId];
-  if (req.user!.role === 'SHOP_MASTER') {
-    targetResourceIds = targetResourceIds.filter((id) => resourcesById.get(id)?.shopId === req.user!.shopId);
-  }
-  if (!targetResourceIds.length) throw new ApiError(400, 'Нет доступных участков для формирования нарядов');
-
   const allWorkers = await db.select().from(workers).where(eq(workers.active, true));
-
   const summary: Record<string, { workerCount: number; assignedHours: number; unassignedHours: number }> = {};
 
   for (const resId of targetResourceIds) {
@@ -101,6 +47,8 @@ workOrdersRouter.post('/generate', requireRole('ADMIN', 'DISPATCHER', 'SHOP_MAST
     if (!resource) continue;
 
     // Пересоздаём наряды этого участка на этот день — так вызов идемпотентен и поддерживает пересчёт.
+    // Ручные переназначения мастером (см. PATCH /items/:id) при этом теряются для этого дня —
+    // это ожидаемо: пересчёт означает "забудь прошлое распределение, посчитай заново".
     const existing = await db.select().from(workOrders)
       .where(and(eq(workOrders.resourceId, resId), eq(workOrders.dayOffset, dayOffset)));
     if (existing.length) {
@@ -112,7 +60,6 @@ workOrdersRouter.post('/generate', requireRole('ADMIN', 'DISPATCHER', 'SHOP_MAST
     const assignedToday: Record<string, number> = {};
     resourceWorkers.forEach((w) => { assignedToday[w.id] = 0; });
 
-    // Операции этого участка, отсортированные так же, как в графике (по старту) — сохраняем приоритет.
     const dayOps = scheduled
       .filter((op) => op.effectiveResourceId === resId)
       .map((op) => ({ op, hoursToday: hoursInDayWindow(op, dayStart, dayEnd) }))
@@ -140,7 +87,6 @@ workOrdersRouter.post('/generate', requireRole('ADMIN', 'DISPATCHER', 'SHOP_MAST
       }
     });
 
-    // Наряд на воркера создаём, только если ему реально что-то досталось.
     const workerIdsWithWork = Object.keys(assignedToday).filter((id) => assignedToday[id] > 1e-9);
     for (const workerId of workerIdsWithWork) {
       const [wo] = await db.insert(workOrders).values({ workerId, resourceId: resId, dayOffset, date }).returning();
@@ -156,7 +102,62 @@ workOrdersRouter.post('/generate', requireRole('ADMIN', 'DISPATCHER', 'SHOP_MAST
     };
   }
 
-  res.json({ dayOffset, date, resources: summary });
+  return summary;
+}
+
+function resolveTargetResourceIds(
+  resourcesById: Map<string, ResourceInput>,
+  resourceId: string | undefined,
+  userRole: string,
+  userShopId: string | null,
+): string[] {
+  let ids = Array.from(resourcesById.keys());
+  if (resourceId) ids = [resourceId];
+  if (userRole === 'SHOP_MASTER') ids = ids.filter((id) => resourcesById.get(id)?.shopId === userShopId);
+  return ids;
+}
+
+const generateSchema = z.object({
+  dayOffset: z.number().int().min(0).max(60),
+  resourceId: z.string().uuid().optional(),
+});
+
+workOrdersRouter.post('/generate', requireRole('ADMIN', 'DISPATCHER', 'SHOP_MASTER'), asyncHandler(async (req, res) => {
+  const { dayOffset, resourceId } = generateSchema.parse(req.body);
+  const { scheduled, resourcesById } = await loadScheduleContext();
+  const targetResourceIds = resolveTargetResourceIds(resourcesById, resourceId, req.user!.role, req.user!.shopId);
+  if (!targetResourceIds.length) throw new ApiError(400, 'Нет доступных участков для формирования нарядов');
+
+  const summary = await generateForDay(dayOffset, targetResourceIds, scheduled, resourcesById);
+  res.json({ dayOffset, date: dateStringFor(dayOffset), resources: summary });
+}));
+
+// ===================== Формирование нарядов на диапазон дней (например, на всю неделю разом) =====================
+const generateRangeSchema = z.object({
+  fromDayOffset: z.number().int().min(0).max(60),
+  toDayOffset: z.number().int().min(0).max(60),
+  resourceId: z.string().uuid().optional(),
+});
+
+workOrdersRouter.post('/generate-range', requireRole('ADMIN', 'DISPATCHER', 'SHOP_MASTER'), asyncHandler(async (req, res) => {
+  const { fromDayOffset, toDayOffset, resourceId } = generateRangeSchema.parse(req.body);
+  if (toDayOffset < fromDayOffset) throw new ApiError(400, 'toDayOffset должен быть не меньше fromDayOffset');
+  if (toDayOffset - fromDayOffset > 30) throw new ApiError(400, 'Слишком большой диапазон — не более 31 дня за раз');
+
+  // Загружаем график один раз — но пересчитываем его на каждой итерации дня, т.к. факт выполнения
+  // (completedHours) операций дня N зависит от того, что уже "спланировано" в днях до него —
+  // на самом деле для авторасчёта график не меняется между днями (он не хранит состояние по дням),
+  // поэтому одного расчёта достаточно для всего диапазона.
+  const { scheduled, resourcesById } = await loadScheduleContext();
+  const targetResourceIds = resolveTargetResourceIds(resourcesById, resourceId, req.user!.role, req.user!.shopId);
+  if (!targetResourceIds.length) throw new ApiError(400, 'Нет доступных участков для формирования нарядов');
+
+  const byDay: Record<number, Record<string, { workerCount: number; assignedHours: number; unassignedHours: number }>> = {};
+  for (let day = fromDayOffset; day <= toDayOffset; day += 1) {
+    byDay[day] = await generateForDay(day, targetResourceIds, scheduled, resourcesById);
+  }
+
+  res.json({ fromDayOffset, toDayOffset, days: byDay });
 }));
 
 // ===================== Просмотр нарядов =====================
@@ -164,17 +165,17 @@ workOrdersRouter.get('/', asyncHandler(async (req, res) => {
   const dayOffset = req.query.dayOffset !== undefined ? Number(req.query.dayOffset) : undefined;
   const workerId = req.query.workerId as string | undefined;
   const resourceId = req.query.resourceId as string | undefined;
+  const fromDayOffset = req.query.fromDayOffset !== undefined ? Number(req.query.fromDayOffset) : undefined;
+  const toDayOffset = req.query.toDayOffset !== undefined ? Number(req.query.toDayOffset) : undefined;
 
   const conditions = [];
   if (dayOffset !== undefined) conditions.push(eq(workOrders.dayOffset, dayOffset));
   if (workerId) conditions.push(eq(workOrders.workerId, workerId));
   if (resourceId) conditions.push(eq(workOrders.resourceId, resourceId));
 
-  let scopedResourceIds: string[] | null = null;
   if (req.user!.role === 'SHOP_MASTER') {
     const shopResources = await db.select().from(resources).where(eq(resources.shopId, req.user!.shopId!));
-    scopedResourceIds = shopResources.map((r) => r.id);
-    conditions.push(inArray(workOrders.resourceId, scopedResourceIds));
+    conditions.push(inArray(workOrders.resourceId, shopResources.map((r) => r.id)));
   }
 
   const rows = await db.query.workOrders.findMany({
@@ -185,7 +186,13 @@ workOrdersRouter.get('/', asyncHandler(async (req, res) => {
       items: { with: { orderOperation: { with: { order: true } } } },
     },
   });
-  res.json(rows);
+
+  const filtered = (fromDayOffset !== undefined || toDayOffset !== undefined)
+    ? rows.filter((r) => (fromDayOffset === undefined || r.dayOffset >= fromDayOffset)
+      && (toDayOffset === undefined || r.dayOffset <= toDayOffset))
+    : rows;
+
+  res.json(filtered);
 }));
 
 // ===================== Отчёт по факту выполнения =====================
@@ -218,4 +225,84 @@ workOrdersRouter.post('/items/:id/report', requireRole('ADMIN', 'SHOP_MASTER'), 
   }).where(eq(workOrderItems.id, req.params.id)).returning();
 
   res.json(updated);
+}));
+
+// ===================== Ручное переназначение позиции наряда мастером =====================
+// Мастер может перекинуть операцию на другого работника своего участка/цеха и/или поправить
+// запланированные часы — например, если система распределила неудачно, а мастер знает ситуацию лучше.
+const reassignSchema = z.object({
+  workerId: z.string().uuid().optional(),
+  hoursPlanned: z.number().positive().optional(),
+}).refine((d) => d.workerId !== undefined || d.hoursPlanned !== undefined, {
+  message: 'Укажите workerId и/или hoursPlanned',
+});
+
+workOrdersRouter.patch('/items/:id', requireRole('ADMIN', 'SHOP_MASTER'), asyncHandler(async (req, res) => {
+  const data = reassignSchema.parse(req.body);
+
+  const item = await db.query.workOrderItems.findFirst({
+    where: eq(workOrderItems.id, req.params.id),
+    with: { workOrder: { with: { resource: true } }, orderOperation: { with: { catalogOperation: true } } },
+  });
+  if (!item) throw new ApiError(404, 'Позиция наряда не найдена');
+
+  if (req.user!.role === 'SHOP_MASTER' && item.workOrder.resource.shopId !== req.user!.shopId) {
+    throw new ApiError(403, 'Мастер может редактировать наряды только своего цеха');
+  }
+
+  let warning: string | null = null;
+
+  if (data.workerId && data.workerId !== item.workOrder.workerId) {
+    const [targetWorker] = await db.select().from(workers).where(eq(workers.id, data.workerId));
+    if (!targetWorker) throw new ApiError(404, 'Работник не найден');
+    if (targetWorker.resourceId !== item.workOrder.resourceId) {
+      throw new ApiError(400, 'Работник должен относиться к тому же участку, что и операция');
+    }
+    if (req.user!.role === 'SHOP_MASTER') {
+      const [targetResource] = await db.select().from(resources).where(eq(resources.id, targetWorker.resourceId));
+      if (targetResource?.shopId !== req.user!.shopId) {
+        throw new ApiError(403, 'Мастер может назначать только работников своего цеха');
+      }
+    }
+
+    // Разряд не блокирует ручное назначение — мастер может знать ситуацию лучше системы
+    // (например, работник уже обучен, а справочник ещё не обновили) — но предупреждаем.
+    const requiredGrade = item.orderOperation.catalogOperation?.requiredGrade ?? 1;
+    if (targetWorker.grade < requiredGrade) {
+      warning = `У операции требуется разряд не ниже ${requiredGrade}, у работника — ${targetWorker.grade}`;
+    }
+
+    // Находим (или создаём) наряд целевого работника на тот же день+участок, переносим позицию туда.
+    let [targetWorkOrder] = await db.select().from(workOrders).where(and(
+      eq(workOrders.workerId, data.workerId),
+      eq(workOrders.resourceId, item.workOrder.resourceId),
+      eq(workOrders.dayOffset, item.workOrder.dayOffset),
+    ));
+    if (!targetWorkOrder) {
+      [targetWorkOrder] = await db.insert(workOrders).values({
+        workerId: data.workerId,
+        resourceId: item.workOrder.resourceId,
+        dayOffset: item.workOrder.dayOffset,
+        date: item.workOrder.date,
+      }).returning();
+    }
+
+    const oldWorkOrderId = item.workOrderId;
+    await db.update(workOrderItems).set({ workOrderId: targetWorkOrder.id }).where(eq(workOrderItems.id, item.id));
+
+    // Если у старого наряда после переноса не осталось позиций — убираем пустой наряд.
+    const remainingInOld = await db.select().from(workOrderItems).where(eq(workOrderItems.workOrderId, oldWorkOrderId));
+    if (!remainingInOld.length) await db.delete(workOrders).where(eq(workOrders.id, oldWorkOrderId));
+  }
+
+  if (data.hoursPlanned !== undefined) {
+    await db.update(workOrderItems).set({ hoursPlanned: data.hoursPlanned }).where(eq(workOrderItems.id, item.id));
+  }
+
+  const updated = await db.query.workOrderItems.findFirst({
+    where: eq(workOrderItems.id, item.id),
+    with: { workOrder: { with: { worker: true } }, orderOperation: true },
+  });
+
+  res.json({ ...updated, warning });
 }));

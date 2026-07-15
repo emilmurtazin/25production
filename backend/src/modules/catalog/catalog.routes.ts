@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { db } from '../../db/client';
-import { catalogOperations, modificationItems } from '../../db/schema';
+import { catalogOperations, productItems } from '../../db/schema';
 import { asyncHandler, ApiError } from '../../middleware/errorHandler';
 import { requireAuth, requireRole } from '../../middleware/auth';
 
@@ -43,9 +43,9 @@ catalogRouter.patch('/:id', requireRole('ADMIN', 'NORMIROVSHIK'), asyncHandler(a
 }));
 
 catalogRouter.delete('/:id', requireRole('ADMIN', 'NORMIROVSHIK'), asyncHandler(async (req, res) => {
-  const usedInMods = await db.select().from(modificationItems).where(eq(modificationItems.catalogOperationId, req.params.id));
-  if (usedInMods.length) {
-    throw new ApiError(409, 'Операция используется в модификациях изделия — сначала уберите её оттуда');
+  const usedInProducts = await db.select().from(productItems).where(eq(productItems.catalogOperationId, req.params.id));
+  if (usedInProducts.length) {
+    throw new ApiError(409, 'Операция используется в изделиях — сначала уберите её оттуда');
   }
   await db.delete(catalogOperations).where(eq(catalogOperations.id, req.params.id));
   res.status(204).send();

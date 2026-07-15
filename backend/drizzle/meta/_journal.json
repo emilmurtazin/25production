@@ -5,15 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1783312407903,
-      "tag": "0000_crazy_mongoose",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1783576857068,
-      "tag": "0001_classy_masque",
+      "when": 1783844136607,
+      "tag": "0000_dizzy_chronomancer",
       "breakpoints": true
     }
   ]

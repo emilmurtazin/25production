@@ -25,11 +25,9 @@ export interface OrderOperationInput {
   id: string;
   orderId: string;
   orderName: string;
-  projectId: string;
-  projectName: string;
   client: string;
   priority: 'NORMAL' | 'URGENT';
-  deadlineHours: number;
+  deadlineHours: number; // вычисляется из реальной deadlineDate заказа на момент запроса
   orderCreatedAt: number; // timestamp (мс) — тай-брейкер сортировки внутри одного приоритета/срока
   name: string;
   durationHours: number; // полная норма (для отображения)

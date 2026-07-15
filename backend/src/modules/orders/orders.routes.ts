@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { eq, inArray } from 'drizzle-orm';
 import { db } from '../../db/client';
 import {
-  orders, orderOperations, catalogOperations, modifications, modificationItems, resources, projects,
+  orders, orderOperations, catalogOperations, products, productItems, resources,
 } from '../../db/schema';
 import { asyncHandler, ApiError } from '../../middleware/errorHandler';
 import { requireAuth, requireRole } from '../../middleware/auth';
@@ -12,50 +12,58 @@ export const ordersRouter = Router();
 ordersRouter.use(requireAuth);
 
 ordersRouter.get('/', asyncHandler(async (_req, res) => {
-  const rows = await db.query.orders.findMany({ with: { operations: true, project: true } });
+  const rows = await db.query.orders.findMany({ with: { operations: true } });
   res.json(rows);
 }));
 
-// ---------- Создание заказа: либо явным списком операций (catalogOperationId+qty), либо из модификации ----------
-const opInputSchema = z.object({ catalogOperationId: z.string().uuid(), qty: z.number().int().positive() });
+// ---------- Создание заказа: изделия+количество (основной путь) и/или отдельные операции вручную ----------
+const itemInputSchema = z.object({ catalogOperationId: z.string().uuid(), qty: z.number().int().positive() });
+const productInputSchema = z.object({ productId: z.string().uuid(), qty: z.number().int().positive() });
+
 const createOrderSchema = z.object({
   name: z.string().min(1).optional(),
-  projectId: z.string().uuid(),
+  client: z.string().min(1),
+  deadlineDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ожидается дата в формате YYYY-MM-DD'),
   priority: z.enum(['NORMAL', 'URGENT']).default('NORMAL'),
-  modificationId: z.string().uuid().optional(),
-  items: z.array(opInputSchema).optional(),
-}).refine((d) => d.modificationId || (d.items && d.items.length > 0), {
-  message: 'Укажите modificationId или непустой список items',
+  products: z.array(productInputSchema).optional(),
+  items: z.array(itemInputSchema).optional(),
+}).refine((d) => (d.products && d.products.length > 0) || (d.items && d.items.length > 0), {
+  message: 'Укажите хотя бы одно изделие (products) или отдельную операцию (items)',
 });
 
 ordersRouter.post('/', requireRole('ADMIN', 'DISPATCHER'), asyncHandler(async (req, res) => {
   const data = createOrderSchema.parse(req.body);
 
-  const [project] = await db.select().from(projects).where(eq(projects.id, data.projectId));
-  if (!project) throw new ApiError(404, 'Проект не найден');
+  // Собираем плоский список (операция, количество) — из изделий (каждое разворачивается в свой
+  // набор операций, умноженный на количество изделий) и из отдельных операций, добавленных вручную.
+  const flatItems: { catalogOperationId: string; qty: number }[] = [];
 
-  let items: { catalogOperationId: string; qty: number }[];
-  if (data.modificationId) {
-    const rows = await db.select().from(modificationItems).where(eq(modificationItems.modificationId, data.modificationId));
-    if (!rows.length) throw new ApiError(404, 'Модификация не найдена или пуста');
-    items = rows.map((r) => ({ catalogOperationId: r.catalogOperationId, qty: r.qty }));
-  } else {
-    items = data.items!;
+  if (data.products?.length) {
+    const productIds = data.products.map((p) => p.productId);
+    const rows = await db.select().from(productItems).where(inArray(productItems.productId, productIds));
+    if (!rows.length) throw new ApiError(404, 'Изделия не найдены или пусты');
+    data.products.forEach((p) => {
+      const productRows = rows.filter((r) => r.productId === p.productId);
+      productRows.forEach((r) => flatItems.push({ catalogOperationId: r.catalogOperationId, qty: r.qty * p.qty }));
+    });
+  }
+  if (data.items?.length) {
+    data.items.forEach((it) => flatItems.push(it));
   }
 
-  const catalogIds = items.map((i) => i.catalogOperationId);
-  const catalogRows = await db.select().from(catalogOperations)
-    .where(inArray(catalogOperations.id, catalogIds));
+  const catalogIds = flatItems.map((i) => i.catalogOperationId);
+  const catalogRows = await db.select().from(catalogOperations).where(inArray(catalogOperations.id, catalogIds));
   const catalogMap = new Map(catalogRows.map((c) => [c.id, c]));
 
   const [order] = await db.insert(orders).values({
     name: data.name || `Заказ ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`,
-    projectId: data.projectId,
+    client: data.client,
+    deadlineDate: data.deadlineDate,
     priority: data.priority,
     createdById: req.user!.id,
   }).returning();
 
-  const opsToInsert = items.map((it, idx) => {
+  const opsToInsert = flatItems.map((it, idx) => {
     const cat = catalogMap.get(it.catalogOperationId);
     if (!cat) throw new ApiError(400, `Операция справочника ${it.catalogOperationId} не найдена`);
     return {
@@ -72,23 +80,18 @@ ordersRouter.post('/', requireRole('ADMIN', 'DISPATCHER'), asyncHandler(async (r
   res.status(201).json({ ...order, operations: insertedOps });
 }));
 
-// ---------- Быстрый срочный заказ: случайные операции из справочника (как кнопка "авто" в прототипе) ----------
+// ---------- Быстрый срочный заказ: случайные операции из справочника ----------
 ordersRouter.post('/urgent-quick', requireRole('ADMIN', 'DISPATCHER'), asyncHandler(async (req, res) => {
-  const urgentProjectName = 'Внеплановые/срочные работы';
-  let [urgentProject] = await db.select().from(projects).where(eq(projects.name, urgentProjectName));
-  if (!urgentProject) {
-    [urgentProject] = await db.insert(projects).values({
-      name: urgentProjectName, client: 'Разные клиенты', object: '—', deadlineHours: 20,
-    }).returning();
-  }
-
   const allCatalog = await db.select().from(catalogOperations);
   if (allCatalog.length < 1) throw new ApiError(400, 'Справочник операций пуст');
   const picked = [...allCatalog].sort(() => Math.random() - 0.5).slice(0, 3);
 
+  const deadline = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10); // через 2 дня
+
   const [order] = await db.insert(orders).values({
-    name: `СРОЧНО — аварийная партия`,
-    projectId: urgentProject.id,
+    name: 'СРОЧНО — аварийная партия',
+    client: 'Приоритетный клиент',
+    deadlineDate: deadline,
     priority: 'URGENT',
     createdById: req.user!.id,
   }).returning();
@@ -107,12 +110,26 @@ ordersRouter.post('/urgent-quick', requireRole('ADMIN', 'DISPATCHER'), asyncHand
   res.status(201).json({ ...order, operations: insertedOps });
 }));
 
+const updateOrderSchema = z.object({
+  name: z.string().min(1).optional(),
+  client: z.string().min(1).optional(),
+  deadlineDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  priority: z.enum(['NORMAL', 'URGENT']).optional(),
+});
+
+ordersRouter.patch('/:id', requireRole('ADMIN', 'DISPATCHER'), asyncHandler(async (req, res) => {
+  const data = updateOrderSchema.parse(req.body);
+  const [updated] = await db.update(orders).set(data).where(eq(orders.id, req.params.id)).returning();
+  if (!updated) throw new ApiError(404, 'Заказ не найден');
+  res.json(updated);
+}));
+
 ordersRouter.delete('/:id', requireRole('ADMIN', 'DISPATCHER'), asyncHandler(async (req, res) => {
   await db.delete(orders).where(eq(orders.id, req.params.id));
   res.status(204).send();
 }));
 
-// ---------- Ручное закрепление операции (аналог drag-and-drop в прототипе) ----------
+// ---------- Ручное закрепление операции на графике участка ----------
 const pinSchema = z.object({
   pinnedStart: z.number().min(0),
   pinnedResourceId: z.string().uuid().optional(),
@@ -127,7 +144,6 @@ ordersRouter.patch('/operations/:opId/pin', requireRole('ADMIN', 'DISPATCHER', '
   const [targetResource] = await db.select().from(resources).where(eq(resources.id, targetResourceId));
   if (!targetResource) throw new ApiError(404, 'Целевой ресурс не найден');
 
-  // Мастер цеха может закреплять только в пределах своего цеха — и текущий, и целевой ресурс.
   if (req.user!.role === 'SHOP_MASTER') {
     const [currentResource] = await db.select().from(resources).where(eq(resources.id, op.resourceId));
     if (currentResource?.shopId !== req.user!.shopId || targetResource.shopId !== req.user!.shopId) {

@@ -4,9 +4,8 @@ import { db } from '../../db/client';
 import { orderOperations, workOrders } from '../../db/schema';
 import { requireAuth } from '../../middleware/auth';
 import { asyncHandler } from '../../middleware/errorHandler';
-import {
-  computeSchedule, isWorkingHour, OrderOperationInput, ResourceInput,
-} from '../schedule/scheduling.service';
+import { isWorkingHour, ResourceInput } from '../schedule/scheduling.service';
+import { loadScheduleContext } from '../schedule/loadSchedule';
 
 export const analyticsRouter = Router();
 analyticsRouter.use(requireAuth);
@@ -21,66 +20,30 @@ function availableHoursInWindow(resource: ResourceInput): number {
 }
 
 analyticsRouter.get('/overview', asyncHandler(async (_req, res) => {
-  const [shopRows, resourceRows, orderRows, catalogRows, projectRows, allOps] = await Promise.all([
-    db.query.shops.findMany(),
-    db.query.resources.findMany(),
-    db.query.orders.findMany({ with: { operations: true, project: true } }),
-    db.query.catalogOperations.findMany(),
-    db.query.projects.findMany(),
+  const [{ scheduled, resourcesById, shopRows }, orderRows, allOps] = await Promise.all([
+    loadScheduleContext(),
+    db.query.orders.findMany(),
     db.select().from(orderOperations),
   ]);
 
-  const shopById = new Map(shopRows.map((s) => [s.id, s]));
-  const catalogById = new Map(catalogRows.map((c) => [c.id, c]));
-
-  const resourcesById = new Map<string, ResourceInput>();
-  resourceRows.forEach((r) => {
-    const shop = shopById.get(r.shopId);
-    if (!shop) return;
-    resourcesById.set(r.id, {
-      id: r.id, name: r.name, type: r.type, alwaysOn: r.alwaysOn,
-      shopId: shop.id, shopName: shop.name,
-      calendar: { workStart: shop.workStart, workEnd: shop.workEnd, workDays: shop.workDays },
-    });
-  });
-
-  const operations: OrderOperationInput[] = [];
-  orderRows.forEach((order) => {
-    order.operations.forEach((op) => {
-      const catalogOp = op.catalogOperationId ? catalogById.get(op.catalogOperationId) : undefined;
-      operations.push({
-        id: op.id, orderId: order.id, orderName: order.name,
-        projectId: order.project.id, projectName: order.project.name, client: order.project.client,
-        priority: order.priority, deadlineHours: order.project.deadlineHours,
-        orderCreatedAt: order.createdAt.getTime(),
-        name: op.name, durationHours: op.durationHours, completedHours: op.completedHours,
-        catalogOperationId: op.catalogOperationId, requiredGrade: catalogOp?.requiredGrade ?? 1,
-        sequence: op.sequence, resourceId: op.resourceId,
-        pinnedStart: op.pinnedStart, pinnedResourceId: op.pinnedResourceId,
-      });
-    });
-  });
-
-  const scheduled = computeSchedule(operations, resourcesById);
-
-  // ---------- Проекты: прогноз срыва срока ----------
-  // Прогнозируемое завершение проекта = самая поздняя точка окончания среди ещё не выполненных
-  // операций его заказов в текущем графике. Если операций не осталось — проект уже полностью
-  // выполнен (или у него ещё нет заказов), считать "срыв" не имеет смысла.
-  const projects = projectRows.map((p) => {
-    const ops = scheduled.filter((o) => o.projectId === p.id);
-    const projectedCompletionHours = ops.length ? Math.max(...ops.map((o) => o.end)) : null;
-    const atRisk = projectedCompletionHours !== null && projectedCompletionHours > p.deadlineHours;
+  // ---------- Заказы: прогноз срыва срока ----------
+  // Прогнозируемое завершение заказа = самая поздняя точка окончания среди ещё не выполненных
+  // операций заказа в текущем графике. Если операций не осталось — заказ уже полностью выполнен.
+  const orders = orderRows.map((o) => {
+    const ops = scheduled.filter((s) => s.orderId === o.id);
+    const projectedCompletionHours = ops.length ? Math.max(...ops.map((s) => s.end)) : null;
+    const atRisk = projectedCompletionHours !== null && projectedCompletionHours > (ops[0]?.deadlineHours ?? 0);
+    const overdueByHours = atRisk ? +(projectedCompletionHours! - ops[0].deadlineHours).toFixed(1) : 0;
     return {
-      id: p.id,
-      name: p.name,
-      client: p.client,
-      deadlineHours: p.deadlineHours,
+      id: o.id,
+      name: o.name,
+      client: o.client,
+      deadlineDate: o.deadlineDate,
       projectedCompletionHours: projectedCompletionHours !== null ? +projectedCompletionHours.toFixed(1) : null,
       atRisk,
-      overdueByHours: atRisk ? +(projectedCompletionHours! - p.deadlineHours).toFixed(1) : 0,
+      overdueByHours,
       remainingOperations: ops.length,
-      remainingHours: +ops.reduce((s, o) => s + o.remainingHours, 0).toFixed(1),
+      remainingHours: +ops.reduce((s, op) => s + op.remainingHours, 0).toFixed(1),
     };
   });
 
@@ -147,9 +110,8 @@ analyticsRouter.get('/overview', asyncHandler(async (_req, res) => {
   const totalCompleted = allOps.reduce((s, o) => s + Math.min(o.completedHours, o.durationHours), 0);
 
   const totals = {
-    activeProjects: projects.length,
-    atRiskProjects: projects.filter((p) => p.atRisk).length,
-    totalOrders: orderRows.length,
+    activeOrders: orders.length,
+    atRiskOrders: orders.filter((o) => o.atRisk).length,
     totalRemainingHours: +scheduled.reduce((s, o) => s + o.remainingHours, 0).toFixed(1),
     overallCompletionPercent: totalDuration > 0 ? Math.round((totalCompleted / totalDuration) * 100) : 0,
   };
@@ -158,6 +120,6 @@ analyticsRouter.get('/overview', asyncHandler(async (_req, res) => {
     generatedAt: new Date().toISOString(),
     windowHours: WINDOW_HOURS,
     reportPeriod: { from: dateFrom, to: dateTo },
-    totals, projects, shops, resources: resourceStats, workers,
+    totals, orders, shops, resources: resourceStats, workers,
   });
 }));

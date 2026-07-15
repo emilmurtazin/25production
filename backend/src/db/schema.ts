@@ -1,6 +1,6 @@
 // ============================================================
 // Схема БД сервиса планирования производства (Drizzle ORM).
-// Цеха -> Ресурсы -> Справочник операций -> Модификации -> Проекты -> Заказы -> Операции заказа.
+// Цеха -> Ресурсы -> Справочник операций -> Изделия -> Заказы -> Операции заказа.
 // Расписание НЕ хранится в таблицах — оно вычисляется на лету в scheduling.service.ts
 // из заказов + календаря цехов, точно так же, как в HTML-прототипе. Единственный источник правды — заказы.
 // ============================================================
@@ -68,36 +68,30 @@ export const measurements = pgTable('measurements', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
-// ---------- Модификации изделия (шаблоны наборов операций) ----------
-export const modifications = pgTable('modifications', {
+// ---------- Изделия (шаблоны наборов операций) ----------
+export const products = pgTable('products', {
   id: uuid('id').defaultRandom().primaryKey(),
   name: text('name').notNull(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
-export const modificationItems = pgTable('modification_items', {
+export const productItems = pgTable('product_items', {
   id: uuid('id').defaultRandom().primaryKey(),
-  modificationId: uuid('modification_id').notNull()
-    .references(() => modifications.id, { onDelete: 'cascade' }),
+  productId: uuid('product_id').notNull()
+    .references(() => products.id, { onDelete: 'cascade' }),
   catalogOperationId: uuid('catalog_operation_id').notNull().references(() => catalogOperations.id),
   qty: integer('qty').notNull().default(1),
 });
 
-// ---------- Проекты ----------
-export const projects = pgTable('projects', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  name: text('name').notNull(),
-  client: text('client').notNull(),
-  object: text('object').notNull(),
-  deadlineHours: doublePrecision('deadline_hours').notNull(), // срок в часах — единица сортировки приоритета
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-});
-
 // ---------- Заказы ----------
+// Клиент и срок сдачи (реальная календарная дата) хранятся прямо на заказе — раньше это было
+// вынесено в отдельную сущность "Проект", но на практике проект и заказ почти всегда совпадали
+// один-к-одному и только запутывали интерфейс. Один заказ = один клиент = один срок.
 export const orders = pgTable('orders', {
   id: uuid('id').defaultRandom().primaryKey(),
   name: text('name').notNull(),
-  projectId: uuid('project_id').notNull().references(() => projects.id),
+  client: text('client').notNull(),
+  deadlineDate: text('deadline_date').notNull(), // 'YYYY-MM-DD' — конечная дата сдачи заказа
   priority: priorityEnum('priority').notNull().default('NORMAL'),
   createdById: uuid('created_by_id').references(() => users.id),
   createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -178,21 +172,16 @@ export const measurementsRelations = relations(measurements, ({ one }) => ({
   measuredBy: one(users, { fields: [measurements.measuredById], references: [users.id] }),
 }));
 
-export const modificationsRelations = relations(modifications, ({ many }) => ({
-  items: many(modificationItems),
+export const productsRelations = relations(products, ({ many }) => ({
+  items: many(productItems),
 }));
 
-export const modificationItemsRelations = relations(modificationItems, ({ one }) => ({
-  modification: one(modifications, { fields: [modificationItems.modificationId], references: [modifications.id] }),
-  catalogOperation: one(catalogOperations, { fields: [modificationItems.catalogOperationId], references: [catalogOperations.id] }),
+export const productItemsRelations = relations(productItems, ({ one }) => ({
+  product: one(products, { fields: [productItems.productId], references: [products.id] }),
+  catalogOperation: one(catalogOperations, { fields: [productItems.catalogOperationId], references: [catalogOperations.id] }),
 }));
 
-export const projectsRelations = relations(projects, ({ many }) => ({
-  orders: many(orders),
-}));
-
-export const ordersRelations = relations(orders, ({ one, many }) => ({
-  project: one(projects, { fields: [orders.projectId], references: [projects.id] }),
+export const ordersRelations = relations(orders, ({ many }) => ({
   operations: many(orderOperations),
 }));
 

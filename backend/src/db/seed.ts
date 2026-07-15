@@ -1,10 +1,15 @@
 import 'dotenv/config';
+import { eq } from 'drizzle-orm';
 import { db, pool } from './client';
 import {
-  shops, resources, catalogOperations, modifications, modificationItems, projects, orders, orderOperations, users,
+  shops, resources, catalogOperations, products, productItems, orders, orderOperations, users,
   measurements, workers,
 } from './schema';
 import { hashPassword } from '../utils/password';
+
+function daysFromNow(days: number): string {
+  return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
 
 async function main() {
   console.log('Очищаю таблицы...');
@@ -12,10 +17,9 @@ async function main() {
   await db.delete(workers);
   await db.delete(orderOperations);
   await db.delete(orders);
-  await db.delete(modificationItems);
-  await db.delete(modifications);
+  await db.delete(productItems);
+  await db.delete(products);
   await db.delete(catalogOperations);
-  await db.delete(projects);
   await db.delete(users);
   await db.delete(resources);
   await db.delete(shops);
@@ -82,23 +86,19 @@ async function main() {
   const insertedCatalog = await db.insert(catalogOperations).values(catalogDefs).returning();
   const c = (name: string) => insertedCatalog.find((x) => x.name === name)!;
 
-  console.log('Создаю модификации изделия...');
+  console.log('Создаю изделия...');
   const baseNames = catalogDefs.slice(0, 21).map((d) => d.name);
-  const [modBase] = await db.insert(modifications).values({ name: 'Турникет базовый (без КЗП)' }).returning();
-  await db.insert(modificationItems).values(baseNames.map((name) => ({ modificationId: modBase.id, catalogOperationId: c(name).id, qty: 1 })));
+  const [productBase] = await db.insert(products).values({ name: 'Турникет базовый (без КЗП)' }).returning();
+  await db.insert(productItems).values(baseNames.map((name) => ({ productId: productBase.id, catalogOperationId: c(name).id, qty: 1 })));
 
   const withKzpNames = catalogDefs.map((d) => d.name);
-  const [modKzp] = await db.insert(modifications).values({ name: 'Турникет с модулем КЗП' }).returning();
-  await db.insert(modificationItems).values(withKzpNames.map((name) => ({ modificationId: modKzp.id, catalogOperationId: c(name).id, qty: 1 })));
+  const [productKzp] = await db.insert(products).values({ name: 'Турникет с модулем КЗП' }).returning();
+  await db.insert(productItems).values(withKzpNames.map((name) => ({ productId: productKzp.id, catalogOperationId: c(name).id, qty: 1 })));
 
-  console.log('Создаю проекты и заказы...');
-  const [p1] = await db.insert(projects).values({ name: 'Реконструкция склада №4', client: 'ООО Склад-Сервис', object: 'Складской комплекс, корп. 4', deadlineHours: 60 }).returning();
-  const [p2] = await db.insert(projects).values({ name: 'Ограждение промзоны', client: 'СтройГрупп', object: 'Промзона Юг', deadlineHours: 110 }).returning();
-  const [p3] = await db.insert(projects).values({ name: 'Меблировка офиса', client: 'МебельПро', object: 'Бизнес-центр «Атлант»', deadlineHours: 80 }).returning();
-  const [p4] = await db.insert(projects).values({ name: 'Благоустройство ЖК Northside', client: 'ЖК Northside', object: 'Секция 2, паркинг', deadlineHours: 100 }).returning();
-  await db.insert(projects).values({ name: 'Внеплановые/срочные работы', client: 'Разные клиенты', object: '—', deadlineHours: 20 });
-
-  const [o1] = await db.insert(orders).values({ name: 'Заказ №214 — стеллажи', projectId: p1.id, priority: 'NORMAL' }).returning();
+  console.log('Создаю заказы...');
+  const [o1] = await db.insert(orders).values({
+    name: 'Заказ №214 — стеллажи', client: 'ООО Склад-Сервис', deadlineDate: daysFromNow(4), priority: 'NORMAL',
+  }).returning();
   await db.insert(orderOperations).values([
     { orderId: o1.id, name: 'Резка листа', durationHours: 5, sequence: 1, resourceId: r('Лазерная резка').id },
     { orderId: o1.id, name: 'Гибка полок', durationHours: 4, sequence: 2, resourceId: r('Гибка').id },
@@ -106,21 +106,27 @@ async function main() {
     { orderId: o1.id, name: 'Сборка', durationHours: 3, sequence: 4, resourceId: r('Сборка').id },
   ]);
 
-  const [o2] = await db.insert(orders).values({ name: 'Заказ №215 — ограждения', projectId: p2.id, priority: 'NORMAL' }).returning();
+  const [o2] = await db.insert(orders).values({
+    name: 'Заказ №215 — ограждения', client: 'СтройГрупп', deadlineDate: daysFromNow(7), priority: 'NORMAL',
+  }).returning();
   await db.insert(orderOperations).values([
     { orderId: o2.id, name: 'Резка', durationHours: 6, sequence: 1, resourceId: r('Лазерная резка').id },
     { orderId: o2.id, name: 'Сварка каркаса', durationHours: 8, sequence: 2, resourceId: r('Сварка').id },
     { orderId: o2.id, name: 'Покраска', durationHours: 5, sequence: 3, resourceId: r('Покраска').id },
   ]);
 
-  const [o3] = await db.insert(orders).values({ name: 'Заказ №216 — шкафы', projectId: p3.id, priority: 'NORMAL' }).returning();
+  const [o3] = await db.insert(orders).values({
+    name: 'Заказ №216 — шкафы', client: 'МебельПро', deadlineDate: daysFromNow(5), priority: 'NORMAL',
+  }).returning();
   await db.insert(orderOperations).values([
     { orderId: o3.id, name: 'Резка', durationHours: 4, sequence: 1, resourceId: r('Лазерная резка').id },
     { orderId: o3.id, name: 'Гибка', durationHours: 3, sequence: 2, resourceId: r('Гибка').id },
     { orderId: o3.id, name: 'Сборка', durationHours: 5, sequence: 3, resourceId: r('Сборка').id },
   ]);
 
-  const [o4] = await db.insert(orders).values({ name: 'Заказ №217 — навесы', projectId: p2.id, priority: 'NORMAL' }).returning();
+  const [o4] = await db.insert(orders).values({
+    name: 'Заказ №217 — навесы', client: 'СтройГрупп', deadlineDate: daysFromNow(6), priority: 'NORMAL',
+  }).returning();
   await db.insert(orderOperations).values([
     { orderId: o4.id, name: 'Резка', durationHours: 5, sequence: 1, resourceId: r('Лазерная резка').id },
     { orderId: o4.id, name: 'Сварка', durationHours: 7, sequence: 2, resourceId: r('Сварка').id },
@@ -128,12 +134,34 @@ async function main() {
     { orderId: o4.id, name: 'Сборка', durationHours: 4, sequence: 4, resourceId: r('Сборка').id },
   ]);
 
-  const [o5] = await db.insert(orders).values({ name: 'Заказ №218 — перила', projectId: p4.id, priority: 'NORMAL' }).returning();
+  const [o5] = await db.insert(orders).values({
+    name: 'Заказ №218 — перила', client: 'ЖК Northside', deadlineDate: daysFromNow(6), priority: 'NORMAL',
+  }).returning();
   await db.insert(orderOperations).values([
     { orderId: o5.id, name: 'Гибка', durationHours: 5, sequence: 1, resourceId: r('Гибка').id },
     { orderId: o5.id, name: 'Сварка', durationHours: 6, sequence: 2, resourceId: r('Сварка').id },
     { orderId: o5.id, name: 'Покраска', durationHours: 5, sequence: 3, resourceId: r('Покраска').id },
   ]);
+
+  // Заказ на изделия — показывает основной путь создания заказа (турникеты через "изделие + количество").
+  const [o6] = await db.insert(orders).values({
+    name: 'Заказ №219 — турникеты для БЦ Атлант', client: 'Бизнес-центр «Атлант»', deadlineDate: daysFromNow(8), priority: 'NORMAL',
+  }).returning();
+  const productBaseItems = await db.select().from(productItems).where(eq(productItems.productId, productBase.id));
+  await db.insert(orderOperations).values(
+    productBaseItems.map((it, idx) => {
+      const cat = insertedCatalog.find((x) => x.id === it.catalogOperationId)!;
+      const qty = it.qty * 3; // заказали 3 турникета
+      return {
+        orderId: o6.id,
+        name: `${cat.name} ×${qty}`,
+        durationHours: +((cat.normMinutes / 60) * qty).toFixed(2),
+        sequence: idx + 1,
+        resourceId: cat.resourceId,
+        catalogOperationId: cat.id,
+      };
+    }),
+  );
 
   console.log('Создаю пользователей (пароли — из .env / значения по умолчанию ниже)...');
   const demoPassword = process.env.SEED_ADMIN_PASSWORD || 'change-me-admin-password';
