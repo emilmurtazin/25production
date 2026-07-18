@@ -7,11 +7,10 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
-# VITE_API_URL встраивается в бандл на этапе сборки, поэтому либо используйте .env.production
-# (уже лежит в репозитории), либо передайте свой адрес через --build-arg при сборке образа:
-#   docker build --build-arg VITE_API_URL=https://ваш-backend/api -t frontend .
-ARG VITE_API_URL
-ENV VITE_API_URL=$VITE_API_URL
+# VITE_API_URL берётся из .env.production, который уже лежит в репозитории — специально
+# НЕ передаём его через Docker ARG/ENV: даже пустое значение оттуда перебивает .env-файл
+# более высоким приоритетом в Vite, что и было причиной "Failed to fetch" в проде.
+# Если понадобится другой адрес backend — просто отредактируйте .env.production перед сборкой.
 RUN npm run build
 
 FROM nginx:alpine AS production
