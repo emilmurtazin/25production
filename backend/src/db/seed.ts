@@ -11,7 +11,7 @@ function daysFromNow(days: number): string {
   return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
-async function main() {
+export async function runSeed() {
   console.log('Очищаю таблицы...');
   await db.delete(measurements);
   await db.delete(workers);
@@ -177,6 +177,11 @@ async function main() {
   console.log(`Готово. Пароль у всех демо-пользователей одинаковый: "${demoPassword}" (см. SEED_ADMIN_PASSWORD в .env)`);
 }
 
-main()
-  .catch((err) => { console.error(err); process.exitCode = 1; })
-  .finally(async () => { await pool.end(); });
+// Закрываем пул соединений и завершаем процесс только при запуске как самостоятельного скрипта
+// (`node dist/db/seed.js`) — если runSeed() импортируют из другого места (например, index.ts
+// для AUTO_SEED), пул должен остаться открытым, им ещё пользуется сам сервер.
+if (require.main === module) {
+  runSeed()
+    .catch((err) => { console.error(err); process.exitCode = 1; })
+    .finally(async () => { await pool.end(); });
+}
