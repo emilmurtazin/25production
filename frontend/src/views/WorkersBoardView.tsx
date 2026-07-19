@@ -186,25 +186,48 @@ export function WorkersBoardView() {
                               const { planned, actual, reported, items } = cellData(w.id, d);
                               const info = dayInfo(d);
                               const load = planned > 0 ? Math.min(100, Math.round((planned / 8) * 100)) : 0;
+                              const maxShown = 3;
+                              const shownItems = items.slice(0, maxShown);
+                              const hiddenCount = items.length - shownItems.length;
                               return (
                                 <button
                                   key={d}
                                   onClick={() => items.length && setSelectedCell({ workerId: w.id, dayOffset: d })}
                                   style={{
-                                    flex: 1, minWidth: 92, border: '1px solid var(--grid)', borderRadius: 0,
+                                    flex: 1, minWidth: 150, border: '1px solid var(--grid)', borderRadius: 0,
                                     background: planned === 0 ? 'var(--surface)' : 'var(--surface-2)',
-                                    padding: '8px 6px', textAlign: 'left', cursor: items.length ? 'pointer' : 'default',
-                                    opacity: items.length ? 1 : 0.5,
+                                    padding: '8px 8px', textAlign: 'left', cursor: items.length ? 'pointer' : 'default',
+                                    opacity: items.length ? 1 : 0.5, verticalAlign: 'top',
                                   }}
                                 >
-                                  <div className="hint" style={{ fontSize: 10 }}>{info.label}</div>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                                    <span className="hint" style={{ fontSize: 10 }}>{info.label}</span>
+                                    {items.length > 0 && <span className="hint" style={{ fontSize: 9.5 }}>{items.length} оп.</span>}
+                                  </div>
                                   {planned > 0 ? (
                                     <>
                                       <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 13, fontWeight: 600, color: load > 100 ? 'var(--rose)' : 'var(--cyan)' }}>
                                         {planned.toFixed(1)} ч
                                       </div>
-                                      <div className="load" style={{ height: 4, marginTop: 4 }}>
+                                      <div className="load" style={{ height: 4, margin: '4px 0 6px' }}>
                                         <div className="load-fill" style={{ width: `${load}%`, background: load > 100 ? 'var(--rose)' : 'var(--cyan)' }} />
+                                      </div>
+                                      <div>
+                                        {shownItems.map((item) => (
+                                          <div
+                                            key={item.id}
+                                            style={{
+                                              fontSize: 10, lineHeight: 1.5, color: 'var(--text-dim)',
+                                              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                                            }}
+                                            title={item.orderOperation.name}
+                                          >
+                                            {item.orderOperation.name} <span style={{ color: 'var(--text-faint)' }}>· {item.hoursPlanned}ч</span>
+                                          </div>
+                                        ))}
+                                        {hiddenCount > 0 && (
+                                          <div className="hint" style={{ fontSize: 10 }}>+{hiddenCount} ещё</div>
+                                        )}
                                       </div>
                                       {reported && <div className="hint" style={{ fontSize: 9.5, marginTop: 3, color: 'var(--green)' }}>✓ факт {actual.toFixed(1)} ч</div>}
                                     </>
