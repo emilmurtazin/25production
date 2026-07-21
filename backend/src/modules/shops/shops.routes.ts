@@ -42,7 +42,7 @@ shopsRouter.patch('/:id', requireRole('ADMIN', 'DISPATCHER'), asyncHandler(async
 shopsRouter.delete('/:id', requireRole('ADMIN', 'DISPATCHER'), asyncHandler(async (req, res) => {
   const remaining = await db.select().from(resources).where(eq(resources.shopId, req.params.id));
   if (remaining.length > 0) {
-    throw new ApiError(409, 'В цехе есть участки — сначала перенесите их в другой цех');
+    throw new ApiError(409, 'В цехе есть участки — сначала удалите их');
   }
   const totalShops = await db.select().from(shops);
   if (totalShops.length <= 1) throw new ApiError(409, 'Должен остаться хотя бы один цех');
