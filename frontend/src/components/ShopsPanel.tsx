@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Shop, Resource } from '../api/types';
-import { updateShop, createShop, updateResource } from '../api/endpoints';
+import { updateShop, createShop, deleteShop, updateResource, createResource, deleteResource } from '../api/endpoints';
 import { WEEKDAY_LABELS } from '../utils/calendar';
 
 interface Props {
@@ -15,7 +15,10 @@ const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
 export function ShopsPanel({ shops, resources, canEdit, onChanged }: Props) {
   const [selectedShopId, setSelectedShopId] = useState(shops[0]?.id ?? '');
   const [newShopName, setNewShopName] = useState('');
+  const [newResourceName, setNewResourceName] = useState('');
+  const [newResourceType, setNewResourceType] = useState('участок');
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const shop = shops.find((s) => s.id === selectedShopId) ?? shops[0];
   if (!shop) return null;
@@ -45,11 +48,26 @@ export function ShopsPanel({ shops, resources, canEdit, onChanged }: Props) {
   async function handleAddShop() {
     if (!newShopName.trim()) return;
     setBusy(true);
+    setError(null);
     try {
       const created = await createShop({ name: newShopName.trim() });
       setNewShopName('');
       setSelectedShopId(created.id);
       onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось создать цех');
+    } finally { setBusy(false); }
+  }
+
+  async function handleDeleteShop() {
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteShop(shop.id);
+      setSelectedShopId('');
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось удалить цех');
     } finally { setBusy(false); }
   }
 
@@ -58,13 +76,34 @@ export function ShopsPanel({ shops, resources, canEdit, onChanged }: Props) {
     try { await updateResource(resourceId, { alwaysOn: !current }); onChanged(); } finally { setBusy(false); }
   }
 
-  async function reassignShop(resourceId: string, shopId: string) {
+  async function handleAddResource() {
+    if (!newResourceName.trim()) return;
     setBusy(true);
-    try { await updateResource(resourceId, { shopId }); onChanged(); } finally { setBusy(false); }
+    setError(null);
+    try {
+      await createResource({ name: newResourceName.trim(), type: newResourceType, shopId: shop.id });
+      setNewResourceName('');
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось создать участок');
+    } finally { setBusy(false); }
+  }
+
+  async function handleDeleteResource(id: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteResource(id);
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось удалить участок');
+    } finally { setBusy(false); }
   }
 
   return (
     <div className="panel accent-cyan">
+      {error && <div className="login-error">{error}</div>}
+
       <div className="field-row" style={{ alignItems: 'center' }}>
         <span className="hint">Цех:</span>
         {shops.map((s) => (
@@ -86,6 +125,9 @@ export function ShopsPanel({ shops, resources, canEdit, onChanged }: Props) {
               style={{ flex: '0 0 200px' }}
             />
             <button onClick={handleAddShop} disabled={busy}>+ Новый цех</button>
+            <button className="danger" onClick={handleDeleteShop} disabled={busy || shops.length <= 1} title={shops.length <= 1 ? 'Должен остаться хотя бы один цех' : 'Удалить этот цех'}>
+              ✕ Удалить «{shop.name}»
+            </button>
           </>
         )}
       </div>
@@ -131,15 +173,13 @@ export function ShopsPanel({ shops, resources, canEdit, onChanged }: Props) {
             {r.name}
             {canEdit && (
               <>
-                <select value={r.shopId} onChange={(e) => reassignShop(r.id, e.target.value)} style={{ fontSize: 11, padding: '3px 5px' }}>
-                  {shops.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
                 <button
                   onClick={() => toggleAlwaysOn(r.id, r.alwaysOn)}
                   style={{ padding: '2px 6px', color: r.alwaysOn ? 'var(--cyan)' : undefined }}
                 >
                   24/7
                 </button>
+                <button onClick={() => handleDeleteResource(r.id)} title="Удалить участок">✕</button>
               </>
             )}
             {!canEdit && r.alwaysOn && <span className="always-on-badge">24/7</span>}
@@ -147,6 +187,22 @@ export function ShopsPanel({ shops, resources, canEdit, onChanged }: Props) {
         ))}
         {!shopResources.length && <span className="hint">В этом цехе пока нет участков</span>}
       </div>
+
+      {canEdit && (
+        <div className="field-row" style={{ alignItems: 'center', marginTop: 4 }}>
+          <input
+            placeholder="Название участка"
+            value={newResourceName}
+            onChange={(e) => setNewResourceName(e.target.value)}
+            style={{ flex: '0 0 200px' }}
+          />
+          <select value={newResourceType} onChange={(e) => setNewResourceType(e.target.value)} style={{ flex: '0 0 140px' }}>
+            <option value="участок">участок</option>
+            <option value="бригада">бригада</option>
+          </select>
+          <button onClick={handleAddResource} disabled={busy}>+ Добавить участок в «{shop.name}»</button>
+        </div>
+      )}
     </div>
   );
 }
